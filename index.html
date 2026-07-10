@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#1A1A2E">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="AppASL">
+<title>AppASL — Scoring Sabre Laser</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ═══════════════ ÉCRAN MATCH ═══════════════ -->
+  <section id="screen-match" class="screen">
+
+    <div id="sudden-death-banner" class="sd-banner hidden">⚡ MORT SUBITE — Zone C uniquement ⚡</div>
+
+    <div class="timer-row">
+      <div class="timer-reset">
+        <button id="btn-reset-timer" class="icon-btn" title="Remettre à 3:00" aria-label="Remettre à 3:00">
+          <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M12 5a7 7 0 1 0 7 7h2a9 9 0 1 1-3-6.7V3h2v6h-6V7h2.4A6.98 6.98 0 0 0 12 5Z"/></svg>
+        </button>
+        <span class="timer-reset-label">3 min.</span>
+      </div>
+
+      <div id="timer-display" class="timer-display">3:00</div>
+
+      <button id="btn-add-time" class="text-btn">+30s</button>
+
+      <button id="btn-play-pause" class="play-btn" aria-label="Démarrer / Pause">
+        <svg id="icon-play" viewBox="0 0 24 24" width="26" height="26"><path fill="currentColor" d="M8 5v14l11-7z"/></svg>
+        <svg id="icon-pause" viewBox="0 0 24 24" width="26" height="26" class="hidden"><path fill="currentColor" d="M6 5h4v14H6zm8 0h4v14h-4z"/></svg>
+      </button>
+    </div>
+
+    <div id="pause-indicator" class="pause-indicator hidden">MATCH EN PAUSE</div>
+
+    <div class="fighters-row">
+      <div class="fighter-panel fighter-1" id="panel-1" data-fighter="1">
+        <div class="fighter-name" id="name-1"></div>
+        <div class="fighter-score" id="score-1">0</div>
+        <div class="salve-badge hidden" id="salve-badge-1"></div>
+        <div class="zone-buttons" id="zones-1">
+          <button class="zone-btn zone-c" data-zone="C"><span class="zone-label">Zone C</span><span class="zone-pts">5 pts</span></button>
+          <button class="zone-btn zone-b" data-zone="B"><span class="zone-label">Zone B</span><span class="zone-pts">3 pts</span></button>
+          <button class="zone-btn zone-a" data-zone="A"><span class="zone-label">Zone A</span><span class="zone-pts">1 pt</span></button>
+        </div>
+        <div class="excluded-label hidden" id="excluded-1">EXCLU</div>
+        <div class="card-buttons hidden" id="card-buttons-1">
+          <button class="mini-card white" data-card="white">B</button>
+          <button class="mini-card yellow" data-card="yellow">J</button>
+          <button class="mini-card red" data-card="red">R</button>
+          <button class="mini-card black" data-card="black">N</button>
+        </div>
+        <div class="card-chips" id="card-chips-1"></div>
+      </div>
+
+      <div class="fighter-panel fighter-2" id="panel-2" data-fighter="2">
+        <div class="fighter-name" id="name-2"></div>
+        <div class="fighter-score" id="score-2">0</div>
+        <div class="salve-badge hidden" id="salve-badge-2"></div>
+        <div class="zone-buttons" id="zones-2">
+          <button class="zone-btn zone-c" data-zone="C"><span class="zone-label">Zone C</span><span class="zone-pts">5 pts</span></button>
+          <button class="zone-btn zone-b" data-zone="B"><span class="zone-label">Zone B</span><span class="zone-pts">3 pts</span></button>
+          <button class="zone-btn zone-a" data-zone="A"><span class="zone-label">Zone A</span><span class="zone-pts">1 pt</span></button>
+        </div>
+        <div class="excluded-label hidden" id="excluded-2">EXCLU</div>
+        <div class="card-buttons hidden" id="card-buttons-2">
+          <button class="mini-card white" data-card="white">B</button>
+          <button class="mini-card yellow" data-card="yellow">J</button>
+          <button class="mini-card red" data-card="red">R</button>
+          <button class="mini-card black" data-card="black">N</button>
+        </div>
+        <div class="card-chips" id="card-chips-2"></div>
+      </div>
+    </div>
+
+    <div class="event-log" id="event-log"><div class="event-log-empty">Aucun événement</div></div>
+
+    <div class="actions-row">
+      <button id="btn-validate" class="action-btn cyan" disabled>✓ Valider</button>
+      <button id="btn-cancel-salve" class="action-btn red" disabled>✕ Annuler</button>
+      <button id="btn-undo" class="action-btn orange" disabled>↺ Annuler</button>
+    </div>
+
+    <div class="menu-row">
+      <button id="btn-menu" class="icon-btn" aria-label="Menu">
+        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      </button>
+    </div>
+  </section>
+
+  <!-- ═══════════════ ÉCRAN RÉSULTAT ═══════════════ -->
+  <section id="screen-result" class="screen hidden">
+    <div class="result-top">
+      <div class="result-label">FIN DU MATCH</div>
+      <div id="winner-title" class="winner-title"></div>
+      <div id="result-score-1" class="result-score"></div>
+      <div id="result-score-2" class="result-score"></div>
+      <button id="btn-undo-result" class="action-btn orange hidden">↺ Annuler la dernière action</button>
+      <div class="result-buttons">
+        <button id="btn-export-result" class="action-btn">⬇ Export</button>
+        <button id="btn-new-match" class="action-btn green">↻ Nouveau match</button>
+      </div>
+    </div>
+    <div class="event-log" id="event-log-result"></div>
+  </section>
+
+</div>
+
+<!-- popup menu -->
+<div id="menu-overlay" class="menu-overlay hidden">
+  <div id="menu-popup" class="popup">
+    <button data-action="toss">🎲&nbsp;&nbsp;Toss</button>
+    <button data-action="export">⬇&nbsp;&nbsp;Export</button>
+    <button data-action="reset" class="danger">↻&nbsp;&nbsp;Reset</button>
+  </div>
+</div>
+
+<!-- modal générique -->
+<div id="modal-overlay" class="modal-overlay hidden">
+  <div class="modal">
+    <div id="modal-title" class="modal-title"></div>
+    <div id="modal-body" class="modal-body"></div>
+    <div id="modal-actions" class="modal-actions"></div>
+  </div>
+</div>
+
+<!-- toast -->
+<div id="toast" class="toast hidden"></div>
+
+<script src="app.js"></script>
+</body>
+</html>
