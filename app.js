@@ -814,6 +814,203 @@ function confirmClearHistory() {
   ]);
 }
 
+// ═══════════════════════════ STATISTIQUES ═══════════════════════════
+
+const ZONE_LABELS = { A: 'Zone A (1 pt)', B: 'Zone B (3 pts)', C: 'Zone C (5 pts)' };
+const ZONE_COLORS = { A: '#43A047', B: '#FFB300', C: '#E53935' };
+const CARD_LABELS = { white: 'Blanc', yellow: 'Jaune', red: 'Rouge', black: 'Noir' };
+const CARD_COLORS = { white: '#FFFFFF', yellow: '#FFEB3B', red: '#E53935', black: '#000000' };
+
+function computeStats(records) {
+  const s = {
+    totalMatches: records.length,
+    winsRed: 0, winsGreen: 0, ties: 0,
+    totalScoreRed: 0, totalScoreGreen: 0,
+    totalDurationS: 0,
+    suddenDeathMatches: 0,
+    zoneCounts: { A: 0, B: 0, C: 0 },
+    cardCounts: { white: 0, yellow: 0, red: 0, black: 0 },
+  };
+
+  records.forEach((rec) => {
+    if (rec.winner === rec.fighter1Name) s.winsRed++;
+    else if (rec.winner === rec.fighter2Name) s.winsGreen++;
+    else s.ties++;
+
+    s.totalScoreRed += rec.score1;
+    s.totalScoreGreen += rec.score2;
+    s.totalDurationS += rec.durationS;
+
+    if (rec.events.some((e) => !e.cancelled && e.isSuddenDeath)) s.suddenDeathMatches++;
+
+    rec.events.forEach((e) => {
+      if (e.cancelled) return;
+      if (e.type === 'touche' && e.zone) s.zoneCounts[e.zone]++;
+      if (e.type === 'carton' && e.carton) s.cardCounts[e.carton]++;
+    });
+  });
+
+  return s;
+}
+
+function formatDuration(totalSeconds) {
+  const m = Math.floor(totalSeconds / 60);
+  const s = Math.round(totalSeconds % 60);
+  return `${m}:${pad2(s)}`;
+}
+
+function statTile(label, value) {
+  const tile = document.createElement('div');
+  tile.className = 'stat-tile';
+  const lbl = document.createElement('div');
+  lbl.className = 'stat-tile-label';
+  lbl.textContent = label;
+  const val = document.createElement('div');
+  val.className = 'stat-tile-value';
+  val.textContent = value;
+  tile.append(lbl, val);
+  return tile;
+}
+
+function statBarRow(label, value, max, color, extraClass) {
+  const row = document.createElement('div');
+  row.className = 'stat-bar-row';
+
+  const lbl = document.createElement('span');
+  lbl.className = 'stat-bar-label';
+  lbl.textContent = label;
+
+  const track = document.createElement('div');
+  track.className = 'stat-bar-track';
+  const fill = document.createElement('div');
+  fill.className = 'stat-bar-fill' + (extraClass ? ` ${extraClass}` : '');
+  fill.style.background = color;
+  fill.style.width = max > 0 ? `${Math.max((value / max) * 100, value > 0 ? 3 : 0)}%` : '0%';
+  track.appendChild(fill);
+
+  const val = document.createElement('span');
+  val.className = 'stat-bar-value';
+  val.textContent = String(value);
+
+  row.append(lbl, track, val);
+  return row;
+}
+
+function renderStats(stats) {
+  const body = document.getElementById('stats-body');
+  body.innerHTML = '';
+
+  if (stats.totalMatches === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'stats-empty';
+    empty.textContent = 'Aucun match enregistré pour le moment.';
+    body.appendChild(empty);
+    return;
+  }
+
+  const avgScore = (stats.totalScoreRed + stats.totalScoreGreen) / (2 * stats.totalMatches);
+  const avgDurationS = stats.totalDurationS / stats.totalMatches;
+  const suddenDeathPct = Math.round((stats.suddenDeathMatches / stats.totalMatches) * 100);
+
+  const kpiGrid = document.createElement('div');
+  kpiGrid.className = 'stats-kpi-grid';
+  kpiGrid.append(
+    statTile('Matchs joués', String(stats.totalMatches)),
+    statTile('Score moyen / combattant', avgScore.toFixed(1)),
+    statTile('Durée moyenne', formatDuration(avgDurationS)),
+    statTile('Mort subite', `${suddenDeathPct}%`),
+  );
+  body.appendChild(kpiGrid);
+
+  // ── victoires ──
+  const winsSection = document.createElement('div');
+  winsSection.className = 'stats-section';
+  const winsTitle = document.createElement('div');
+  winsTitle.className = 'stats-section-title';
+  winsTitle.textContent = 'Victoires';
+  winsSection.appendChild(winsTitle);
+
+  const total = stats.totalMatches;
+  const bar = document.createElement('div');
+  bar.className = 'stats-stacked-bar';
+  const segments = [
+    { count: stats.winsRed, color: '#E53935' },
+    { count: stats.winsGreen, color: '#43A047' },
+    { count: stats.ties, color: 'rgba(255,255,255,0.24)' },
+  ];
+  segments.forEach((seg) => {
+    if (seg.count === 0) return;
+    const el = document.createElement('div');
+    el.className = 'stats-stacked-seg';
+    el.style.background = seg.color;
+    el.style.flex = `${seg.count} 0 0`;
+    bar.appendChild(el);
+  });
+  winsSection.appendChild(bar);
+
+  const legend = document.createElement('div');
+  legend.className = 'stats-legend';
+  const legendItems = [
+    { label: 'Combattant rouge', count: stats.winsRed, color: '#E53935' },
+    { label: 'Combattant vert', count: stats.winsGreen, color: '#43A047' },
+    { label: 'Égalité', count: stats.ties, color: 'rgba(255,255,255,0.24)' },
+  ];
+  legendItems.forEach((item) => {
+    const li = document.createElement('div');
+    li.className = 'stats-legend-item';
+    const dot = document.createElement('span');
+    dot.className = 'stats-legend-dot';
+    dot.style.background = item.color;
+    const pct = total > 0 ? Math.round((item.count / total) * 100) : 0;
+    const txt = document.createElement('span');
+    txt.textContent = `${item.label} : ${item.count} (${pct}%)`;
+    li.append(dot, txt);
+    legend.appendChild(li);
+  });
+  winsSection.appendChild(legend);
+  body.appendChild(winsSection);
+
+  // ── touches par zone ──
+  const zoneSection = document.createElement('div');
+  zoneSection.className = 'stats-section';
+  const zoneTitle = document.createElement('div');
+  zoneTitle.className = 'stats-section-title';
+  zoneTitle.textContent = 'Touches par zone';
+  zoneSection.appendChild(zoneTitle);
+  const zoneMax = Math.max(stats.zoneCounts.A, stats.zoneCounts.B, stats.zoneCounts.C, 1);
+  ['C', 'B', 'A'].forEach((zone) => {
+    zoneSection.appendChild(statBarRow(ZONE_LABELS[zone], stats.zoneCounts[zone], zoneMax, ZONE_COLORS[zone]));
+  });
+  body.appendChild(zoneSection);
+
+  // ── cartons ──
+  const cardTotal = stats.cardCounts.white + stats.cardCounts.yellow + stats.cardCounts.red + stats.cardCounts.black;
+  if (cardTotal > 0) {
+    const cardSection = document.createElement('div');
+    cardSection.className = 'stats-section';
+    const cardTitle = document.createElement('div');
+    cardTitle.className = 'stats-section-title';
+    cardTitle.textContent = 'Cartons';
+    cardSection.appendChild(cardTitle);
+    const cardMax = Math.max(stats.cardCounts.white, stats.cardCounts.yellow, stats.cardCounts.red, stats.cardCounts.black, 1);
+    ['white', 'yellow', 'red', 'black'].forEach((color) => {
+      const extraClass = color === 'black' && stats.cardCounts.black > 0 ? 'black-fill' : undefined;
+      cardSection.appendChild(statBarRow(CARD_LABELS[color], stats.cardCounts[color], cardMax, CARD_COLORS[color], extraClass));
+    });
+    body.appendChild(cardSection);
+  }
+}
+
+async function openStats() {
+  const records = await getAllMatchRecords();
+  renderStats(computeStats(records));
+  document.getElementById('stats-overlay').classList.remove('hidden');
+}
+
+function closeStats() {
+  document.getElementById('stats-overlay').classList.add('hidden');
+}
+
 function doToss() {
   const redWins = Math.random() < 0.5;
   const winnerName = redWins ? state.fighter1.name : state.fighter2.name;
@@ -862,6 +1059,7 @@ document.getElementById('menu-overlay').addEventListener('click', (e) => {
   if (action === 'toss') doToss();
   else if (action === 'export') exportCsv();
   else if (action === 'history') openHistory();
+  else if (action === 'stats') openStats();
   else if (action === 'reset') confirmReset();
 });
 
@@ -878,6 +1076,7 @@ document.getElementById('history-list').addEventListener('click', (e) => {
   if (row) openHistoryDetail(row.dataset.id);
 });
 document.getElementById('btn-history-clear').addEventListener('click', confirmClearHistory);
+document.getElementById('btn-history-stats').addEventListener('click', () => { closeHistory(); openStats(); });
 
 document.getElementById('btn-history-detail-close').addEventListener('click', closeHistoryDetail);
 document.getElementById('history-detail-overlay').addEventListener('click', (e) => {
@@ -885,6 +1084,11 @@ document.getElementById('history-detail-overlay').addEventListener('click', (e) 
 });
 document.getElementById('btn-history-detail-export').addEventListener('click', () => exportHistoryEntry(historyDetailId));
 document.getElementById('btn-history-detail-delete').addEventListener('click', () => confirmDeleteHistoryEntry(historyDetailId));
+
+document.getElementById('btn-stats-close').addEventListener('click', closeStats);
+document.getElementById('stats-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'stats-overlay') closeStats();
+});
 
 // empêche le pull-to-refresh / zoom accidentel pendant le match
 document.addEventListener('touchmove', (e) => {

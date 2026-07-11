@@ -122,6 +122,7 @@
     <button data-action="toss">🎲&nbsp;&nbsp;Toss</button>
     <button data-action="export">⬇&nbsp;&nbsp;Export</button>
     <button data-action="history">🗂&nbsp;&nbsp;Historique</button>
+    <button data-action="stats">📊&nbsp;&nbsp;Statistiques</button>
     <button data-action="reset" class="danger">↻&nbsp;&nbsp;Reset</button>
   </div>
 </div>
@@ -134,7 +135,21 @@
       <button id="btn-history-close" class="icon-btn" aria-label="Fermer">✕</button>
     </div>
     <div id="history-list" class="history-list"></div>
-    <button id="btn-history-clear" class="action-btn red history-clear-btn">🗑 Vider l'historique</button>
+    <div class="history-footer-row">
+      <button id="btn-history-stats" class="text-btn">📊 Voir les statistiques</button>
+      <button id="btn-history-clear" class="action-btn red history-clear-btn">🗑 Vider l'historique</button>
+    </div>
+  </div>
+</div>
+
+<!-- statistiques -->
+<div id="stats-overlay" class="history-overlay hidden">
+  <div class="history-panel">
+    <div class="history-header">
+      <div class="history-title">Statistiques</div>
+      <button id="btn-stats-close" class="icon-btn" aria-label="Fermer">✕</button>
+    </div>
+    <div id="stats-body" class="stats-body"></div>
   </div>
 </div>
 
