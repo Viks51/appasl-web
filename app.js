@@ -929,6 +929,68 @@ function renderZoneBreakdown(container, zoneCounts, title) {
   container.appendChild(zoneSection);
 }
 
+function zoneHeatColor(count, maxZone) {
+  if (count === 0) return 'rgba(255,255,255,0.08)';
+  const intensity = maxZone > 0 ? count / maxZone : 0;
+  const opacity = (0.3 + 0.6 * intensity).toFixed(2);
+  return `rgba(255,152,0,${opacity})`; // ramp mono-teinte sur #FF9800
+}
+
+function renderZoneHeatmap(container, zoneCounts, title) {
+  const section = document.createElement('div');
+  section.className = 'stats-section';
+  const heading = document.createElement('div');
+  heading.className = 'stats-section-title';
+  heading.textContent = title;
+  section.appendChild(heading);
+
+  const maxZone = Math.max(zoneCounts.A, zoneCounts.B, zoneCounts.C);
+  const colorC = zoneHeatColor(zoneCounts.C, maxZone);
+  const colorB = zoneHeatColor(zoneCounts.B, maxZone);
+  const colorA = zoneHeatColor(zoneCounts.A, maxZone);
+
+  const wrap = document.createElement('div');
+  wrap.className = 'zone-heatmap-wrap';
+  wrap.innerHTML = `
+    <svg class="zone-heatmap-svg" viewBox="0 0 140 240" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Silhouette du combattant colorée selon les zones les plus touchées">
+      <line x1="46" y1="54" x2="20" y2="120" stroke="${colorB}" stroke-width="16" stroke-linecap="round"/>
+      <line x1="94" y1="54" x2="120" y2="120" stroke="${colorB}" stroke-width="16" stroke-linecap="round"/>
+      <line x1="58" y1="118" x2="46" y2="220" stroke="${colorB}" stroke-width="18" stroke-linecap="round"/>
+      <line x1="82" y1="118" x2="94" y2="220" stroke="${colorB}" stroke-width="18" stroke-linecap="round"/>
+      <ellipse cx="44" cy="228" rx="14" ry="7" fill="${colorB}"/>
+      <ellipse cx="96" cy="228" rx="14" ry="7" fill="${colorB}"/>
+      <rect x="40" y="44" width="60" height="80" rx="18" fill="${colorC}"/>
+      <circle cx="70" cy="24" r="18" fill="${colorC}"/>
+      <circle cx="16" cy="126" r="10" fill="${colorA}"/>
+      <circle cx="124" cy="126" r="10" fill="${colorA}"/>
+    </svg>
+  `;
+  section.appendChild(wrap);
+
+  const total = zoneCounts.A + zoneCounts.B + zoneCounts.C;
+  const legend = document.createElement('div');
+  legend.className = 'stats-legend';
+  const items = [
+    { label: 'Tête, torse, épaules, dos', count: zoneCounts.C, color: colorC },
+    { label: 'Bras, jambes, pieds', count: zoneCounts.B, color: colorB },
+    { label: 'Mains, poignée', count: zoneCounts.A, color: colorA },
+  ];
+  items.forEach((item) => {
+    const li = document.createElement('div');
+    li.className = 'stats-legend-item';
+    const dot = document.createElement('span');
+    dot.className = 'stats-legend-dot';
+    dot.style.background = item.color;
+    const pct = total > 0 ? Math.round((item.count / total) * 100) : 0;
+    const txt = document.createElement('span');
+    txt.textContent = `${item.label} : ${item.count} (${pct}%)`;
+    li.append(dot, txt);
+    legend.appendChild(li);
+  });
+  section.appendChild(legend);
+  container.appendChild(section);
+}
+
 function renderClubStats(container, stats) {
   container.innerHTML = '';
 
@@ -1148,7 +1210,7 @@ function renderFighterDetail(container, key) {
   );
   container.appendChild(kpiGrid);
 
-  renderZoneBreakdown(container, stats.zoneCounts, 'Touches par zone');
+  renderZoneHeatmap(container, stats.zoneCounts, 'Zones touchées');
   renderCardBreakdown(container, stats.cardCounts, 'Cartons reçus');
 
   const oppSection = document.createElement('div');

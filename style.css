@@ -612,6 +612,9 @@ html, body {
 
 .stats-empty { color: var(--white24); font-size: 12px; text-align: center; padding: 40px 0; }
 
+.zone-heatmap-wrap { display: flex; justify-content: center; padding: 4px 0 6px; }
+.zone-heatmap-svg { width: 120px; height: auto; }
+
 /* barre empilée (victoires) */
 .stats-stacked-bar {
   display: flex;
