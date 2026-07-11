@@ -107,6 +107,7 @@
       <button id="btn-undo-result" class="action-btn orange hidden">↺ Annuler la dernière action</button>
       <div class="result-buttons">
         <button id="btn-export-result" class="action-btn">⬇ Export</button>
+        <button id="btn-history-result" class="action-btn">🗂 Historique</button>
         <button id="btn-new-match" class="action-btn green">↻ Nouveau match</button>
       </div>
     </div>
@@ -120,7 +121,35 @@
   <div id="menu-popup" class="popup">
     <button data-action="toss">🎲&nbsp;&nbsp;Toss</button>
     <button data-action="export">⬇&nbsp;&nbsp;Export</button>
+    <button data-action="history">🗂&nbsp;&nbsp;Historique</button>
     <button data-action="reset" class="danger">↻&nbsp;&nbsp;Reset</button>
+  </div>
+</div>
+
+<!-- historique : liste -->
+<div id="history-overlay" class="history-overlay hidden">
+  <div class="history-panel">
+    <div class="history-header">
+      <div class="history-title">Historique des matchs</div>
+      <button id="btn-history-close" class="icon-btn" aria-label="Fermer">✕</button>
+    </div>
+    <div id="history-list" class="history-list"></div>
+    <button id="btn-history-clear" class="action-btn red history-clear-btn">🗑 Vider l'historique</button>
+  </div>
+</div>
+
+<!-- historique : détail d'un match -->
+<div id="history-detail-overlay" class="history-overlay hidden">
+  <div class="history-panel">
+    <div class="history-header">
+      <div id="history-detail-title" class="history-title"></div>
+      <button id="btn-history-detail-close" class="icon-btn" aria-label="Fermer">✕</button>
+    </div>
+    <div id="history-detail-log" class="event-log"></div>
+    <div class="history-detail-buttons">
+      <button id="btn-history-detail-export" class="action-btn">⬇ Export CSV</button>
+      <button id="btn-history-detail-delete" class="action-btn red">🗑 Supprimer</button>
+    </div>
   </div>
 </div>
 

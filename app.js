@@ -20,7 +20,13 @@ const state = {
   lastSnapshot: null,
   events: [], // { matchSecond, description, type, fighterId, zone, isSalve, salveZones, pointsScored, carton, scoreRouge, scoreVert, isSuddenDeath, cancelled }
   winner: null,
+  matchId: null,
 };
+
+function newMatchId() {
+  if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+  return `m_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
 
 function isSuddenDeath() {
   return state.fighter1.score >= 10 && state.fighter2.score >= 10 && state.status !== 'finished';
@@ -98,7 +104,7 @@ function startStop() {
     addTimestampEvent('Arrêt chrono', 'chrono');
     pauseTimer();
   } else {
-    if (state.status === 'idle') state.matchStartTime = new Date();
+    if (state.status === 'idle') { state.matchStartTime = new Date(); state.matchId = newMatchId(); }
     addTimestampEvent(state.status === 'idle' ? 'Début match' : 'Reprise chrono', 'chrono');
     startTimer();
   }
@@ -145,6 +151,7 @@ function endMatch() {
     else state.winner = 'Égalité';
   }
   addTimestampEvent('Fin du match', 'finMatch');
+  persistCurrentMatch();
   render();
 }
 
@@ -302,37 +309,53 @@ function resetMatch() {
   state.lastSnapshot = null;
   state.events = [];
   state.winner = null;
+  state.matchId = null;
   render();
 }
 
-// ═══════════════════════════ CSV ═══════════════════════════
+// ═══════════════════════════ CSV / HISTORIQUE ═══════════════════════════
 
 const EVENT_TYPE_CSV = { touche: 'touche', carton: 'carton', chrono: 'chrono', finMatch: 'fin_match' };
 
-function generateCsv() {
-  const lines = [];
-
+function buildMatchRecord() {
   let dateStr = '', heureStr = '';
   if (state.matchStartTime) {
     const t = state.matchStartTime;
     dateStr = `${t.getFullYear()}-${pad2(t.getMonth() + 1)}-${pad2(t.getDate())}`;
     heureStr = `${pad2(t.getHours())}:${pad2(t.getMinutes())}:${pad2(t.getSeconds())}`;
   }
+  return {
+    id: state.matchId ?? newMatchId(),
+    savedAt: Date.now(),
+    dateStr,
+    heureStr,
+    fighter1Name: state.fighter1.name,
+    fighter2Name: state.fighter2.name,
+    score1: state.fighter1.score,
+    score2: state.fighter2.score,
+    winner: state.winner ?? '',
+    durationS: elapsedSeconds(),
+    events: state.events.map((e) => ({ ...e })),
+  };
+}
+
+function generateCsvFromRecord(record) {
+  const lines = [];
 
   lines.push('cle,valeur');
-  lines.push(`date,${dateStr}`);
-  lines.push(`heure_debut,${heureStr}`);
-  lines.push(`combattant_rouge,"${state.fighter1.name}"`);
-  lines.push(`combattant_vert,"${state.fighter2.name}"`);
-  lines.push(`score_final_rouge,${state.fighter1.score}`);
-  lines.push(`score_final_vert,${state.fighter2.score}`);
-  lines.push(`vainqueur,"${state.winner ?? ''}"`);
-  lines.push(`duree_s,${elapsedSeconds()}`);
+  lines.push(`date,${record.dateStr}`);
+  lines.push(`heure_debut,${record.heureStr}`);
+  lines.push(`combattant_rouge,"${record.fighter1Name}"`);
+  lines.push(`combattant_vert,"${record.fighter2Name}"`);
+  lines.push(`score_final_rouge,${record.score1}`);
+  lines.push(`score_final_vert,${record.score2}`);
+  lines.push(`vainqueur,"${record.winner}"`);
+  lines.push(`duree_s,${record.durationS}`);
   lines.push('');
 
   lines.push('num,temps_match_s,type,combattant,zone,salve,salve_zones,points_event,score_rouge,score_vert,carton,mort_subite,annule');
 
-  state.events.forEach((e, idx) => {
+  record.events.forEach((e, idx) => {
     const combattant = e.fighterId === 1 ? 'rouge' : e.fighterId === 2 ? 'vert' : '';
     const zone = e.zone ?? '';
     const salve = e.type === 'touche' ? (e.isSalve ? 'oui' : 'non') : '';
@@ -351,9 +374,10 @@ function generateCsv() {
   return lines.join('\n') + '\n';
 }
 
-function downloadCsv() {
-  const content = generateCsv();
-  const timestamp = new Date().toISOString().replace(/:/g, '-').substring(0, 19);
+function downloadCsv(record) {
+  const rec = record ?? buildMatchRecord();
+  const content = generateCsvFromRecord(rec);
+  const timestamp = new Date(rec.savedAt).toISOString().replace(/:/g, '-').substring(0, 19);
   const filename = `appasl_match_${timestamp}.csv`;
 
   const blob = new Blob(['﻿' + content], { type: 'text/csv;charset=utf-8;' });
@@ -375,6 +399,88 @@ function exportCsv() {
   } catch (e) {
     showToast(`Erreur export : ${e}`);
   }
+}
+
+// ── stockage IndexedDB ──
+
+const HISTORY_DB_NAME = 'appasl-db';
+const HISTORY_DB_VERSION = 1;
+const HISTORY_STORE = 'matches';
+
+function openHistoryDb() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(HISTORY_DB_NAME, HISTORY_DB_VERSION);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(HISTORY_STORE)) {
+        db.createObjectStore(HISTORY_STORE, { keyPath: 'id' });
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function saveMatchRecord(record) {
+  try {
+    const db = await openHistoryDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      tx.objectStore(HISTORY_STORE).put(record);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('Erreur sauvegarde historique', e);
+  }
+}
+
+async function getAllMatchRecords() {
+  try {
+    const db = await openHistoryDb();
+    return await new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE, 'readonly');
+      const req = tx.objectStore(HISTORY_STORE).getAll();
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  } catch (e) {
+    console.error('Erreur lecture historique', e);
+    return [];
+  }
+}
+
+async function deleteMatchRecord(id) {
+  try {
+    const db = await openHistoryDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      tx.objectStore(HISTORY_STORE).delete(id);
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('Erreur suppression historique', e);
+  }
+}
+
+async function clearMatchHistory() {
+  try {
+    const db = await openHistoryDb();
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(HISTORY_STORE, 'readwrite');
+      tx.objectStore(HISTORY_STORE).clear();
+      tx.oncomplete = resolve;
+      tx.onerror = () => reject(tx.error);
+    });
+  } catch (e) {
+    console.error('Erreur vidage historique', e);
+  }
+}
+
+function persistCurrentMatch() {
+  if (!state.matchId) return;
+  saveMatchRecord(buildMatchRecord());
 }
 
 // ═══════════════════════════ RENDU ═══════════════════════════
@@ -421,9 +527,9 @@ function colorizeInto(container, text) {
   if (cursor < text.length) container.appendChild(document.createTextNode(text.substring(cursor)));
 }
 
-function renderEventLog(container) {
+function renderEventLog(container, events = state.events) {
   container.innerHTML = '';
-  if (state.events.length === 0) {
+  if (events.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'event-log-empty';
     empty.textContent = 'Aucun événement';
@@ -432,9 +538,9 @@ function renderEventLog(container) {
   }
   // column-reverse affiche déjà le dernier élément du DOM en haut visuellement,
   // donc on ajoute dans l'ordre chronologique et "first" = dernier ajouté.
-  state.events.forEach((e, i) => {
+  events.forEach((e, i) => {
     const row = document.createElement('div');
-    const isFirst = i === state.events.length - 1;
+    const isFirst = i === events.length - 1;
     row.className = 'log-row' + (e.cancelled ? ' cancelled' : '') + (isFirst ? ' first' : '');
 
     const m = Math.floor(e.matchSecond / 60);
@@ -614,6 +720,100 @@ function confirmBlackCard(fighterId) {
   ]);
 }
 
+// ═══════════════════════════ HISTORIQUE : UI ═══════════════════════════
+
+let historyRecords = [];
+let historyDetailId = null;
+
+async function openHistory() {
+  historyRecords = await getAllMatchRecords();
+  historyRecords.sort((a, b) => b.savedAt - a.savedAt);
+  renderHistoryList();
+  document.getElementById('history-overlay').classList.remove('hidden');
+}
+
+function closeHistory() {
+  document.getElementById('history-overlay').classList.add('hidden');
+}
+
+function renderHistoryList() {
+  const container = document.getElementById('history-list');
+  container.innerHTML = '';
+  if (historyRecords.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'event-log-empty';
+    empty.textContent = 'Aucun match enregistré';
+    container.appendChild(empty);
+    return;
+  }
+  historyRecords.forEach((rec) => {
+    const row = document.createElement('button');
+    row.className = 'history-row';
+    row.dataset.id = rec.id;
+    const winnerLabel = rec.winner && rec.winner !== 'Égalité' ? `Vainqueur : ${rec.winner}` : 'Égalité';
+    row.innerHTML = `
+      <span class="history-row-date">${rec.dateStr} ${rec.heureStr}</span>
+      <span class="history-row-names">${rec.fighter1Name} <b>${rec.score1}</b> — <b>${rec.score2}</b> ${rec.fighter2Name}</span>
+      <span class="history-row-winner">${winnerLabel}</span>
+    `;
+    container.appendChild(row);
+  });
+}
+
+function openHistoryDetail(id) {
+  const rec = historyRecords.find((r) => r.id === id);
+  if (!rec) return;
+  historyDetailId = id;
+  document.getElementById('history-detail-title').textContent =
+    `${rec.dateStr} ${rec.heureStr} — ${rec.fighter1Name} ${rec.score1} / ${rec.score2} ${rec.fighter2Name}`;
+  renderEventLog(document.getElementById('history-detail-log'), rec.events);
+  document.getElementById('history-detail-overlay').classList.remove('hidden');
+}
+
+function closeHistoryDetail() {
+  document.getElementById('history-detail-overlay').classList.add('hidden');
+  historyDetailId = null;
+}
+
+function exportHistoryEntry(id) {
+  const rec = historyRecords.find((r) => r.id === id);
+  if (!rec) return;
+  try {
+    const filename = downloadCsv(rec);
+    showToast(`CSV exporté : ${filename}`);
+  } catch (e) {
+    showToast(`Erreur export : ${e}`);
+  }
+}
+
+async function deleteHistoryEntry(id) {
+  await deleteMatchRecord(id);
+  historyRecords = historyRecords.filter((r) => r.id !== id);
+  renderHistoryList();
+  closeHistoryDetail();
+  showToast("Match supprimé de l'historique");
+}
+
+function confirmDeleteHistoryEntry(id) {
+  showModal('Supprimer', 'Supprimer ce match de l\'historique ?', [
+    { label: 'Annuler' },
+    { label: 'Supprimer', danger: true, onClick: () => deleteHistoryEntry(id) },
+  ]);
+}
+
+function confirmClearHistory() {
+  if (historyRecords.length === 0) return;
+  showModal("Vider l'historique", 'Supprimer tous les matchs enregistrés ? Cette action est irréversible.', [
+    { label: 'Annuler' },
+    { label: 'Vider', danger: true, onClick: async () => {
+      await clearMatchHistory();
+      historyRecords = [];
+      renderHistoryList();
+      showToast('Historique vidé');
+    } },
+  ]);
+}
+
 function doToss() {
   const redWins = Math.random() < 0.5;
   const winnerName = redWins ? state.fighter1.name : state.fighter2.name;
@@ -636,6 +836,7 @@ document.getElementById('btn-undo').addEventListener('click', undoLastAction);
 document.getElementById('btn-undo-result').addEventListener('click', undoLastAction);
 
 document.getElementById('btn-export-result').addEventListener('click', exportCsv);
+document.getElementById('btn-history-result').addEventListener('click', openHistory);
 document.getElementById('btn-new-match').addEventListener('click', resetMatch);
 
 [1, 2].forEach((id) => {
@@ -660,12 +861,30 @@ document.getElementById('menu-overlay').addEventListener('click', (e) => {
   toggleMenu(false);
   if (action === 'toss') doToss();
   else if (action === 'export') exportCsv();
+  else if (action === 'history') openHistory();
   else if (action === 'reset') confirmReset();
 });
 
 document.getElementById('modal-overlay').addEventListener('click', (e) => {
   if (e.target.id === 'modal-overlay') hideModal();
 });
+
+document.getElementById('btn-history-close').addEventListener('click', closeHistory);
+document.getElementById('history-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'history-overlay') closeHistory();
+});
+document.getElementById('history-list').addEventListener('click', (e) => {
+  const row = e.target.closest('.history-row');
+  if (row) openHistoryDetail(row.dataset.id);
+});
+document.getElementById('btn-history-clear').addEventListener('click', confirmClearHistory);
+
+document.getElementById('btn-history-detail-close').addEventListener('click', closeHistoryDetail);
+document.getElementById('history-detail-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'history-detail-overlay') closeHistoryDetail();
+});
+document.getElementById('btn-history-detail-export').addEventListener('click', () => exportHistoryEntry(historyDetailId));
+document.getElementById('btn-history-detail-delete').addEventListener('click', () => confirmDeleteHistoryEntry(historyDetailId));
 
 // empêche le pull-to-refresh / zoom accidentel pendant le match
 document.addEventListener('touchmove', (e) => {
