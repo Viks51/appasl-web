@@ -569,7 +569,9 @@ function renderFighterPanel(id, fighter) {
   panel.classList.toggle('excluded', fighter.isExcluded);
   panel.classList.toggle('pending-salve', hasPendingSalve);
 
-  document.getElementById(`name-${id}`).textContent = fighter.name;
+  const nameEl = document.getElementById(`name-${id}`);
+  nameEl.textContent = fighter.name;
+  nameEl.classList.toggle('editable', state.status === 'idle');
   document.getElementById(`score-${id}`).textContent = fighter.score;
 
   const badge = document.getElementById(`salve-badge-${id}`);
@@ -896,15 +898,45 @@ function statBarRow(label, value, max, color, extraClass) {
   return row;
 }
 
-function renderStats(stats) {
-  const body = document.getElementById('stats-body');
-  body.innerHTML = '';
+function renderCardBreakdown(container, cardCounts, title) {
+  const cardTotal = cardCounts.white + cardCounts.yellow + cardCounts.red + cardCounts.black;
+  if (cardTotal === 0) return;
+  const cardSection = document.createElement('div');
+  cardSection.className = 'stats-section';
+  const cardTitle = document.createElement('div');
+  cardTitle.className = 'stats-section-title';
+  cardTitle.textContent = title;
+  cardSection.appendChild(cardTitle);
+  const cardMax = Math.max(cardCounts.white, cardCounts.yellow, cardCounts.red, cardCounts.black, 1);
+  ['white', 'yellow', 'red', 'black'].forEach((color) => {
+    const extraClass = color === 'black' && cardCounts.black > 0 ? 'black-fill' : undefined;
+    cardSection.appendChild(statBarRow(CARD_LABELS[color], cardCounts[color], cardMax, CARD_COLORS[color], extraClass));
+  });
+  container.appendChild(cardSection);
+}
+
+function renderZoneBreakdown(container, zoneCounts, title) {
+  const zoneSection = document.createElement('div');
+  zoneSection.className = 'stats-section';
+  const zoneTitle = document.createElement('div');
+  zoneTitle.className = 'stats-section-title';
+  zoneTitle.textContent = title;
+  zoneSection.appendChild(zoneTitle);
+  const zoneMax = Math.max(zoneCounts.A, zoneCounts.B, zoneCounts.C, 1);
+  ['C', 'B', 'A'].forEach((zone) => {
+    zoneSection.appendChild(statBarRow(ZONE_LABELS[zone], zoneCounts[zone], zoneMax, ZONE_COLORS[zone]));
+  });
+  container.appendChild(zoneSection);
+}
+
+function renderClubStats(container, stats) {
+  container.innerHTML = '';
 
   if (stats.totalMatches === 0) {
     const empty = document.createElement('div');
     empty.className = 'stats-empty';
     empty.textContent = 'Aucun match enregistré pour le moment.';
-    body.appendChild(empty);
+    container.appendChild(empty);
     return;
   }
 
@@ -920,7 +952,7 @@ function renderStats(stats) {
     statTile('Durée moyenne', formatDuration(avgDurationS)),
     statTile('Mort subite', `${suddenDeathPct}%`),
   );
-  body.appendChild(kpiGrid);
+  container.appendChild(kpiGrid);
 
   // ── victoires ──
   const winsSection = document.createElement('div');
@@ -968,47 +1000,248 @@ function renderStats(stats) {
     legend.appendChild(li);
   });
   winsSection.appendChild(legend);
-  body.appendChild(winsSection);
+  container.appendChild(winsSection);
 
-  // ── touches par zone ──
-  const zoneSection = document.createElement('div');
-  zoneSection.className = 'stats-section';
-  const zoneTitle = document.createElement('div');
-  zoneTitle.className = 'stats-section-title';
-  zoneTitle.textContent = 'Touches par zone';
-  zoneSection.appendChild(zoneTitle);
-  const zoneMax = Math.max(stats.zoneCounts.A, stats.zoneCounts.B, stats.zoneCounts.C, 1);
-  ['C', 'B', 'A'].forEach((zone) => {
-    zoneSection.appendChild(statBarRow(ZONE_LABELS[zone], stats.zoneCounts[zone], zoneMax, ZONE_COLORS[zone]));
-  });
-  body.appendChild(zoneSection);
+  renderZoneBreakdown(container, stats.zoneCounts, 'Touches par zone');
+  renderCardBreakdown(container, stats.cardCounts, 'Cartons');
+}
 
-  // ── cartons ──
-  const cardTotal = stats.cardCounts.white + stats.cardCounts.yellow + stats.cardCounts.red + stats.cardCounts.black;
-  if (cardTotal > 0) {
-    const cardSection = document.createElement('div');
-    cardSection.className = 'stats-section';
-    const cardTitle = document.createElement('div');
-    cardTitle.className = 'stats-section-title';
-    cardTitle.textContent = 'Cartons';
-    cardSection.appendChild(cardTitle);
-    const cardMax = Math.max(stats.cardCounts.white, stats.cardCounts.yellow, stats.cardCounts.red, stats.cardCounts.black, 1);
-    ['white', 'yellow', 'red', 'black'].forEach((color) => {
-      const extraClass = color === 'black' && stats.cardCounts.black > 0 ? 'black-fill' : undefined;
-      cardSection.appendChild(statBarRow(CARD_LABELS[color], stats.cardCounts[color], cardMax, CARD_COLORS[color], extraClass));
+// ── statistiques par combattant ──
+
+function normalizeName(name) {
+  return (name || '').trim().replace(/\s+/g, ' ');
+}
+
+function computeFighterRoster(records) {
+  const roster = new Map(); // key: nom normalisé (lowercase) -> { displayName, entries: [{record, side}] }
+  records.forEach((rec) => {
+    [1, 2].forEach((side) => {
+      const name = normalizeName(side === 1 ? rec.fighter1Name : rec.fighter2Name);
+      if (!name) return;
+      const key = name.toLowerCase();
+      if (!roster.has(key)) roster.set(key, { displayName: name, entries: [] });
+      roster.get(key).entries.push({ record: rec, side });
     });
-    body.appendChild(cardSection);
+  });
+  return roster;
+}
+
+function computeFighterStats(entries) {
+  const s = {
+    matches: entries.length,
+    wins: 0, losses: 0, ties: 0,
+    totalScoreFor: 0, totalScoreAgainst: 0,
+    zoneCounts: { A: 0, B: 0, C: 0 },
+    cardCounts: { white: 0, yellow: 0, red: 0, black: 0 },
+    opponents: new Map(), // nom adversaire -> { matches, wins, losses, ties }
+  };
+
+  entries.forEach(({ record, side }) => {
+    const myName = side === 1 ? record.fighter1Name : record.fighter2Name;
+    const oppName = side === 1 ? record.fighter2Name : record.fighter1Name;
+    s.totalScoreFor += side === 1 ? record.score1 : record.score2;
+    s.totalScoreAgainst += side === 1 ? record.score2 : record.score1;
+
+    let outcome = 'tie';
+    if (record.winner === myName) { s.wins++; outcome = 'win'; }
+    else if (record.winner === oppName) { s.losses++; outcome = 'loss'; }
+    else { s.ties++; }
+
+    const oppKey = normalizeName(oppName) || '—';
+    if (!s.opponents.has(oppKey)) s.opponents.set(oppKey, { matches: 0, wins: 0, losses: 0, ties: 0 });
+    const o = s.opponents.get(oppKey);
+    o.matches++;
+    if (outcome === 'win') o.wins++;
+    else if (outcome === 'loss') o.losses++;
+    else o.ties++;
+
+    record.events.forEach((e) => {
+      if (e.cancelled || e.fighterId !== side) return;
+      if (e.type === 'touche' && e.zone) s.zoneCounts[e.zone]++;
+      if (e.type === 'carton' && e.carton) s.cardCounts[e.carton]++;
+    });
+  });
+
+  return s;
+}
+
+function renderFightersList(container) {
+  container.innerHTML = '';
+  const roster = computeFighterRoster(statsRecords);
+
+  if (roster.size === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'stats-empty';
+    empty.textContent = "Aucun combattant nommé pour le moment. Touchez le nom d'un combattant avant un match pour le renseigner.";
+    container.appendChild(empty);
+    return;
+  }
+
+  const rows = [...roster.entries()]
+    .map(([key, data]) => ({ key, displayName: data.displayName, stats: computeFighterStats(data.entries) }))
+    .sort((a, b) => b.stats.matches - a.stats.matches || a.displayName.localeCompare(b.displayName, 'fr'));
+
+  const list = document.createElement('div');
+  list.className = 'fighters-list';
+  rows.forEach(({ key, displayName, stats }) => {
+    const winRate = stats.matches > 0 ? Math.round((stats.wins / stats.matches) * 100) : 0;
+    const row = document.createElement('button');
+    row.className = 'fighter-row';
+    row.dataset.key = key;
+
+    const main = document.createElement('div');
+    main.className = 'fighter-row-main';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'fighter-row-name';
+    nameEl.textContent = displayName;
+    const recordEl = document.createElement('span');
+    recordEl.className = 'fighter-row-record';
+    recordEl.textContent = `${stats.matches} match${stats.matches > 1 ? 's' : ''} · ${stats.wins}V / ${stats.losses}D / ${stats.ties}N`;
+    main.append(nameEl, recordEl);
+
+    const winRateEl = document.createElement('span');
+    winRateEl.className = 'fighter-row-winrate';
+    winRateEl.textContent = `${winRate}%`;
+
+    row.append(main, winRateEl);
+    list.appendChild(row);
+  });
+  container.appendChild(list);
+
+  list.addEventListener('click', (e) => {
+    const row = e.target.closest('.fighter-row');
+    if (!row) return;
+    statsSelectedFighter = row.dataset.key;
+    renderStatsBody();
+  });
+}
+
+function renderFighterDetail(container, key) {
+  container.innerHTML = '';
+  const roster = computeFighterRoster(statsRecords);
+  const data = roster.get(key);
+  if (!data) { statsSelectedFighter = null; renderFightersList(container); return; }
+  const stats = computeFighterStats(data.entries);
+
+  const back = document.createElement('button');
+  back.className = 'text-btn stats-back-btn';
+  back.textContent = '← Tous les combattants';
+  back.addEventListener('click', () => { statsSelectedFighter = null; renderStatsBody(); });
+  container.appendChild(back);
+
+  const title = document.createElement('div');
+  title.className = 'stats-fighter-title';
+  title.textContent = data.displayName;
+  container.appendChild(title);
+
+  const winRate = stats.matches > 0 ? Math.round((stats.wins / stats.matches) * 100) : 0;
+  const avgFor = stats.matches > 0 ? stats.totalScoreFor / stats.matches : 0;
+  const avgAgainst = stats.matches > 0 ? stats.totalScoreAgainst / stats.matches : 0;
+
+  const kpiGrid = document.createElement('div');
+  kpiGrid.className = 'stats-kpi-grid';
+  kpiGrid.append(
+    statTile('Matchs', String(stats.matches)),
+    statTile('Victoires', `${stats.wins} (${winRate}%)`),
+    statTile('Score moyen marqué', avgFor.toFixed(1)),
+    statTile('Score moyen concédé', avgAgainst.toFixed(1)),
+  );
+  container.appendChild(kpiGrid);
+
+  renderZoneBreakdown(container, stats.zoneCounts, 'Touches par zone');
+  renderCardBreakdown(container, stats.cardCounts, 'Cartons reçus');
+
+  const oppSection = document.createElement('div');
+  oppSection.className = 'stats-section';
+  const oppTitle = document.createElement('div');
+  oppTitle.className = 'stats-section-title';
+  oppTitle.textContent = 'Adversaires affrontés';
+  oppSection.appendChild(oppTitle);
+  const oppList = document.createElement('div');
+  oppList.className = 'opponents-list';
+  [...stats.opponents.entries()]
+    .sort((a, b) => b[1].matches - a[1].matches)
+    .forEach(([oppName, rec]) => {
+      const row = document.createElement('div');
+      row.className = 'opponent-row';
+      const nameEl = document.createElement('span');
+      nameEl.className = 'opponent-name';
+      nameEl.textContent = oppName;
+      const recordEl = document.createElement('span');
+      recordEl.className = 'opponent-record';
+      recordEl.textContent = `${rec.matches} match${rec.matches > 1 ? 's' : ''} · ${rec.wins}V / ${rec.losses}D / ${rec.ties}N`;
+      row.append(nameEl, recordEl);
+      oppList.appendChild(row);
+    });
+  oppSection.appendChild(oppList);
+  container.appendChild(oppSection);
+}
+
+let statsRecords = [];
+let statsActiveTab = 'club';
+let statsSelectedFighter = null;
+
+function renderStatsBody() {
+  document.getElementById('tab-stats-club').classList.toggle('active', statsActiveTab === 'club');
+  document.getElementById('tab-stats-fighters').classList.toggle('active', statsActiveTab === 'fighters');
+  const body = document.getElementById('stats-body');
+  if (statsActiveTab === 'club') {
+    renderClubStats(body, computeStats(statsRecords));
+  } else if (statsSelectedFighter) {
+    renderFighterDetail(body, statsSelectedFighter);
+  } else {
+    renderFightersList(body);
   }
 }
 
 async function openStats() {
-  const records = await getAllMatchRecords();
-  renderStats(computeStats(records));
+  statsRecords = await getAllMatchRecords();
+  statsActiveTab = 'club';
+  statsSelectedFighter = null;
+  renderStatsBody();
   document.getElementById('stats-overlay').classList.remove('hidden');
 }
 
 function closeStats() {
   document.getElementById('stats-overlay').classList.add('hidden');
+}
+
+// ═══════════════════════════ NOM DES COMBATTANTS ═══════════════════════════
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+async function promptRenameFighter(id) {
+  if (state.status !== 'idle') return;
+  const fighter = id === 1 ? state.fighter1 : state.fighter2;
+  const defaultName = id === 1 ? 'Combattant rouge' : 'Combattant vert';
+
+  const records = await getAllMatchRecords();
+  const knownNames = new Set();
+  records.forEach((r) => {
+    if (r.fighter1Name) knownNames.add(normalizeName(r.fighter1Name));
+    if (r.fighter2Name) knownNames.add(normalizeName(r.fighter2Name));
+  });
+  const options = [...knownNames].sort((a, b) => a.localeCompare(b, 'fr'))
+    .map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
+
+  showModal('Nom du combattant', `
+    <input id="rename-input" type="text" list="rename-suggestions" maxlength="24" value="${escapeHtml(fighter.name)}" placeholder="${escapeHtml(defaultName)}">
+    <datalist id="rename-suggestions">${options}</datalist>
+  `, [
+    { label: 'Annuler' },
+    { label: 'Valider', onClick: () => {
+      const input = document.getElementById('rename-input');
+      fighter.name = normalizeName(input.value) || defaultName;
+      render();
+    } },
+  ]);
+
+  setTimeout(() => {
+    const input = document.getElementById('rename-input');
+    if (input) { input.focus(); input.select(); }
+  }, 50);
 }
 
 function doToss() {
@@ -1048,6 +1281,7 @@ document.getElementById('btn-new-match').addEventListener('click', resetMatch);
     if (color === 'black') confirmBlackCard(id);
     else addCard(id, color);
   });
+  document.getElementById(`name-${id}`).addEventListener('click', () => promptRenameFighter(id));
 });
 
 document.getElementById('btn-menu').addEventListener('click', () => toggleMenu(true));
@@ -1088,6 +1322,16 @@ document.getElementById('btn-history-detail-delete').addEventListener('click', (
 document.getElementById('btn-stats-close').addEventListener('click', closeStats);
 document.getElementById('stats-overlay').addEventListener('click', (e) => {
   if (e.target.id === 'stats-overlay') closeStats();
+});
+document.getElementById('tab-stats-club').addEventListener('click', () => {
+  statsActiveTab = 'club';
+  statsSelectedFighter = null;
+  renderStatsBody();
+});
+document.getElementById('tab-stats-fighters').addEventListener('click', () => {
+  statsActiveTab = 'fighters';
+  statsSelectedFighter = null;
+  renderStatsBody();
 });
 
 // empêche le pull-to-refresh / zoom accidentel pendant le match

@@ -1,4 +1,4 @@
-const CACHE_NAME = 'appasl-v3';
+const CACHE_NAME = 'appasl-v4';
 const ASSETS = [
   './',
   './index.html',
