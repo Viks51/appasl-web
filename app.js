@@ -1,5 +1,50 @@
 'use strict';
 
+// ═══════════════════════════ VERSION ═══════════════════════════
+// À chaque mise en ligne : ajouter une entrée en tête de APP_RELEASES et passer CACHE_NAME
+// de sw.js au numéro suivant (règle : version 2.N ↔ cache appasl-v(N+1)).
+
+const APP_AUTHOR = 'Baptiste Sené';
+
+const APP_RELEASES = [
+  { version: '2.6', date: '2026-10-14', title: 'Informations', notes: [
+    'Menu « Informations » : version, date, mises à jour et auteur.',
+    'Un nom de combattant long tient sur une ligne : les deux panneaux restent alignés.',
+  ] },
+  { version: '2.5', date: '2026-10-14', title: 'Fiabilité et écran de match', notes: [
+    'Le match en cours est sauvegardé à chaque action et peut être repris après une fermeture de l\'app.',
+    'Touches et cartons peuvent être saisis chrono arrêté.',
+    'Chrono exact même écran verrouillé ; l\'écran reste allumé pendant le match.',
+    'Grands boutons, barre « Valider / Effacer la salve / Défaire », Défaire sur plusieurs actions.',
+    'Vibrations à la saisie, signaux à 10 s et à la fin du temps (son réglable).',
+    'Saisie des deux noms en une fois, avec les noms récents.',
+    'Affichage adapté au paysage et à la tablette ; bandeau « Nouvelle version disponible ».',
+  ] },
+  { version: '2.4', date: '2026-07-11', title: 'Zones touchées', notes: [
+    'Silhouette des zones touchées dans la fiche de chaque combattant.',
+  ] },
+  { version: '2.3', date: '2026-07-11', title: 'Statistiques par combattant', notes: [
+    'Noms des combattants modifiables avant le match.',
+    'Onglet « Par combattant » : bilan, scores moyens, cartons, adversaires.',
+  ] },
+  { version: '2.2', date: '2026-07-11', title: 'Statistiques du club', notes: [
+    'Tableau de statistiques : matchs, scores, durées, victoires, zones et cartons.',
+  ] },
+  { version: '2.1', date: '2026-07-11', title: 'Historique', notes: [
+    'Historique des matchs enregistré sur l\'appareil, avec export CSV et suppression.',
+  ] },
+  { version: '2.0', date: '2026-07-10', title: 'Version web', notes: [
+    'Application web installable sur l\'écran d\'accueil, utilisable hors ligne, export CSV.',
+  ] },
+];
+
+const APP_VERSION = APP_RELEASES[0].version;
+
+function formatDateFr(iso) {
+  const [y, m, d] = iso.split('-');
+  return `${d}/${m}/${y}`;
+}
+
 // ═══════════════════════════ ÉTAT ═══════════════════════════
 
 function newFighter(name) {
@@ -1465,6 +1510,44 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// ═══════════════════════════ INFORMATIONS ═══════════════════════════
+
+const INFO_RECENT_RELEASES = 3; // mises à jour détaillées ; les plus anciennes sont repliées
+
+function renderReleaseNotes(release) {
+  const notes = release.notes.map((n) => `<li>${escapeHtml(n)}</li>`).join('');
+  return `<div class="info-release-head"><b>${release.version}</b> · ${escapeHtml(release.title)}`
+    + `<span class="info-release-date">${formatDateFr(release.date)}</span></div><ul>${notes}</ul>`;
+}
+
+function openInfo() {
+  const latest = APP_RELEASES[0];
+  const recent = APP_RELEASES.slice(0, INFO_RECENT_RELEASES)
+    .map((r) => `<div class="info-release">${renderReleaseNotes(r)}</div>`).join('');
+  const older = APP_RELEASES.slice(INFO_RECENT_RELEASES)
+    .map((r) => `<div class="info-release">${renderReleaseNotes(r)}</div>`).join('');
+
+  document.getElementById('info-body').innerHTML = `
+    <div class="info-app">AppASL — Scoring Sabre Laser<span>ASL Reims</span></div>
+    <div class="stats-kpi-grid">
+      <div class="stat-tile"><div class="stat-tile-label">Version actuelle</div><div class="stat-tile-value" id="info-version">${latest.version}</div></div>
+      <div class="stat-tile"><div class="stat-tile-label">Dernière version</div><div class="stat-tile-value info-date" id="info-date">${formatDateFr(latest.date)}</div></div>
+    </div>
+    <div class="stats-section">
+      <div class="stats-section-title">Dernières mises à jour</div>
+      ${recent}
+      ${older ? `<details class="info-older"><summary>Versions précédentes</summary>${older}</details>` : ''}
+    </div>
+    <div class="stats-section">
+      <div class="stats-section-title">Auteur</div>
+      <div class="info-author" id="info-author">${escapeHtml(APP_AUTHOR)}</div>
+    </div>`;
+  document.getElementById('info-body').scrollTop = 0;
+  document.getElementById('info-overlay').classList.remove('hidden');
+}
+
+function closeInfo() { document.getElementById('info-overlay').classList.add('hidden'); }
+
 const DEFAULT_NAMES = { 1: 'Combattant rouge', 2: 'Combattant vert' };
 
 // noms déjà utilisés, du plus récent au plus ancien
@@ -1654,6 +1737,7 @@ function closeTopLayer() {
   if (isShown('modal-overlay')) { if (modalDismissable) hideModal(); return true; }
   if (isShown('menu-overlay')) { toggleMenu(false); return true; }
   if (isShown('log-overlay')) { closeLog(); return true; }
+  if (isShown('info-overlay')) { closeInfo(); return true; }
   if (isShown('history-detail-overlay')) { closeHistoryDetail(); return true; }
   if (isShown('stats-overlay')) { closeStats(); return true; }
   if (isShown('history-overlay')) { closeHistory(); return true; }
@@ -1673,6 +1757,10 @@ document.addEventListener('click', unlockAudio, true);
 
 document.getElementById('event-log').addEventListener('click', () => { if (state.events.length) openLog(); });
 document.getElementById('btn-log-close').addEventListener('click', closeLog);
+document.getElementById('btn-info-close').addEventListener('click', closeInfo);
+document.getElementById('info-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'info-overlay') closeInfo();
+});
 document.getElementById('log-overlay').addEventListener('click', (e) => {
   if (e.target.id === 'log-overlay') closeLog();
 });
@@ -1724,6 +1812,7 @@ document.getElementById('menu-overlay').addEventListener('click', (e) => {
   else if (action === 'history') openHistory();
   else if (action === 'stats') openStats();
   else if (action === 'sound') toggleSound();
+  else if (action === 'info') openInfo();
   else if (action === 'reset') confirmReset();
 });
 

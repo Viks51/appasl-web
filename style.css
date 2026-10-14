@@ -177,7 +177,10 @@ html, body {
   font-weight: bold;
   color: #fff;
   text-align: center;
-  overflow-wrap: anywhere;
+  /* une seule ligne : un nom long ne doit pas désaligner les deux panneaux */
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   max-width: 100%;
   padding: 2px 8px;
 }
@@ -450,6 +453,24 @@ html, body {
 }
 .popup button:active { background: rgba(255,255,255,0.08); }
 .popup button.danger { color: #ef5350; }
+.popup-separator { height: 1px; background: var(--white12); margin: 2px 0; }
+
+/* ── informations ─────────────────────────────────────────────────────── */
+.info-app { font-size: 16px; font-weight: bold; margin-bottom: 12px; }
+.info-app span { display: block; font-size: 12px; font-weight: normal; color: var(--white60); margin-top: 2px; }
+.stat-tile-value.info-date { font-size: 20px; }
+.info-release {
+  background: #23233d;
+  border: 1px solid var(--white10);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.info-release-head { display: flex; align-items: baseline; gap: 4px; font-size: 14px; }
+.info-release-date { margin-left: auto; font-size: 12px; color: var(--white38); white-space: nowrap; padding-left: 8px; }
+.info-release ul { margin: 6px 0 0; padding-left: 18px; color: var(--white60); font-size: 13px; line-height: 1.4; }
+.info-older summary { cursor: pointer; color: var(--cyan); font-size: 13px; padding: 6px 0 10px; }
+.info-author { font-size: 16px; font-weight: bold; }
 
 /* ── modal ────────────────────────────────────────────────────────────── */
 .modal-overlay {

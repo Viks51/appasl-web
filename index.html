@@ -128,6 +128,8 @@
     <button data-action="stats">📊&nbsp;&nbsp;Statistiques</button>
     <button data-action="sound">🔔&nbsp;&nbsp;Signaux sonores : oui</button>
     <button data-action="reset" class="danger">↻&nbsp;&nbsp;Reset</button>
+    <div class="popup-separator"></div>
+    <button data-action="info">ℹ️&nbsp;&nbsp;Informations</button>
   </div>
 </div>
 
@@ -139,6 +141,17 @@
       <button id="btn-log-close" class="icon-btn" aria-label="Fermer">✕</button>
     </div>
     <div id="event-log-full" class="event-log"></div>
+  </div>
+</div>
+
+<!-- informations : version, mises à jour, auteur -->
+<div id="info-overlay" class="history-overlay hidden">
+  <div class="history-panel">
+    <div class="history-header">
+      <div class="history-title">Informations</div>
+      <button id="btn-info-close" class="icon-btn" aria-label="Fermer">✕</button>
+    </div>
+    <div id="info-body" class="stats-body"></div>
   </div>
 </div>
 
