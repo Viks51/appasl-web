@@ -40,6 +40,7 @@ html, body {
 }
 
 .hidden { display: none !important; }
+.invisible { visibility: hidden !important; }
 
 /* ── bannière mort subite ────────────────────────────────────────────── */
 .sd-banner {
@@ -67,13 +68,15 @@ html, body {
   gap: 0;
 }
 
-.timer-reset-label { color: var(--white38); font-size: 10px; }
+.timer-reset-label { color: var(--white60); font-size: 11px; margin-top: -4px; }
 
 .icon-btn {
   background: none;
   border: none;
-  color: var(--white38);
-  padding: 6px;
+  color: var(--white60);
+  padding: 10px;
+  min-width: 44px;
+  min-height: 44px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -102,8 +105,9 @@ html, body {
   background: none;
   border: none;
   color: var(--white60);
-  font-size: 13px;
-  padding: 6px;
+  font-size: 15px;
+  padding: 10px 6px;
+  min-height: 44px;
   cursor: pointer;
 }
 
@@ -122,13 +126,20 @@ html, body {
 }
 .play-btn.running { background: var(--orange); }
 
-.pause-indicator {
+/* hauteur toujours réservée : arrêter le chrono ne décale pas les boutons */
+.status-line {
   text-align: center;
-  color: var(--orange);
   font-weight: bold;
   font-size: 14px;
-  padding-bottom: 4px;
+  line-height: 20px;
+  height: 26px;
+  padding: 0 8px 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
+.status-line.paused { color: var(--orange); }
+.status-line.hint { color: var(--cyan); font-weight: normal; }
 
 /* ── panneaux combattants ─────────────────────────────────────────────── */
 .fighters-row {
@@ -155,17 +166,24 @@ html, body {
 .fighter-2 { background: #0F2A0F; }
 
 .fighter-panel.excluded { border-color: rgba(198,40,40,0.5); }
-.fighter-panel.pending-salve { border-color: rgba(0,188,212,0.8); border-width: 2px; }
+.fighter-panel.pending-salve { border-color: var(--cyan); box-shadow: inset 0 0 0 1px var(--cyan); }
 
 .fighter-name {
-  font-size: 13px;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-size: 16px;
   font-weight: bold;
-  color: var(--white60);
+  color: #fff;
   text-align: center;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+  max-width: 100%;
+  padding: 2px 8px;
 }
+.fighter-name:disabled { opacity: 1; cursor: default; }
 .fighter-panel.excluded .fighter-name { color: #ef5350; }
-.fighter-name.editable { cursor: pointer; border-bottom: 1px dashed var(--white38); padding-bottom: 1px; }
+.fighter-name.editable { cursor: pointer; border-color: var(--white24); background: rgba(255,255,255,0.06); }
 
 .fighter-score {
   font-size: 48px;
@@ -181,14 +199,19 @@ html, body {
   color: var(--cyan);
   border-radius: 4px;
   padding: 2px 8px;
-  font-size: 11px;
-  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: bold;
+  margin-bottom: 6px;
+  white-space: nowrap;
 }
 
-.zone-buttons { width: 100%; display: flex; flex-direction: column; gap: 4px; }
+.zone-buttons { width: 100%; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 6px; }
 
+/* les boutons de zone occupent toute la hauteur libre du panneau : c'est le geste n° 1 de l'arbitre */
 .zone-btn {
-  height: 46px;
+  flex: 1 1 0;
+  min-height: 44px;
+  max-height: 110px;
   width: 100%;
   border-radius: 8px;
   border: 2px solid transparent;
@@ -199,19 +222,20 @@ html, body {
   cursor: pointer;
   color: #fff;
   font-weight: bold;
-  font-size: 14px;
+  font-size: 17px;
 }
 .zone-btn .zone-pts {
   background: rgba(0,0,0,0.28);
   border-radius: 4px;
-  padding: 1px 5px;
-  font-size: 10px;
+  padding: 1px 6px;
+  font-size: 12px;
   font-weight: normal;
-  color: rgba(255,255,255,0.7);
+  color: #fff;
 }
 
 .zone-btn.zone-c { background: rgba(229,57,53,0.78); border-color: #E53935; }
-.zone-btn.zone-b { background: rgba(255,179,0,0.78); border-color: #FFB300; }
+.zone-btn.zone-b { background: #E0A000; border-color: #FFB300; color: #1A1A1A; }
+.zone-btn.zone-b .zone-pts { background: rgba(0,0,0,0.14); color: #1A1A1A; }
 .zone-btn.zone-a { background: rgba(67,160,71,0.78); border-color: #43A047; }
 
 .zone-btn:disabled, .zone-btn.dim {
@@ -229,14 +253,16 @@ html, body {
   padding: 12px 0;
 }
 
-.card-buttons { display: flex; gap: 3px; margin-top: 6px; }
+/* cartons nettement séparés des zones : un carton mal tapé coûte 3 à 6 points */
+.card-buttons { width: 100%; display: flex; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--white24); }
 
 .mini-card {
-  width: 30px;
-  height: 22px;
-  border-radius: 3px;
+  flex: 1;
+  min-width: 0;
+  height: 40px;
+  border-radius: 5px;
   border: 1px solid rgba(255,255,255,0.3);
-  font-size: 10px;
+  font-size: 15px;
   font-weight: bold;
   cursor: pointer;
   display: flex;
@@ -254,7 +280,7 @@ html, body {
   flex-wrap: wrap;
   gap: 3px;
   justify-content: center;
-  min-height: 4px;
+  min-height: 26px; /* place réservée : les zones des deux combattants restent alignées */
   margin-top: 4px;
 }
 .card-chip {
@@ -284,20 +310,26 @@ html, body {
   overflow-y: auto;
   padding: 4px 8px;
   display: flex;
-  flex-direction: column-reverse;
+  flex-direction: column;
 }
+
+/* journal du match en cours : les 3 dernières lignes, le reste d'un tap */
+/* hauteur fixe (3 lignes + « tout voir ») : le journal qui se remplit ne pousse pas les boutons */
+.event-log.compact { flex: none; height: 84px; overflow: hidden; cursor: pointer; padding: 5px 8px; }
+.event-log.compact .log-row.overflow { display: none; }
+.log-more { color: var(--cyan); font-size: 12px; padding-top: 3px; }
 
 .event-log-empty {
   margin: auto;
-  color: var(--white24);
-  font-size: 11px;
+  color: var(--white38);
+  font-size: 13px;
 }
 
 .log-row {
   display: flex;
   gap: 6px;
   padding: 1px 0;
-  font-size: 11px;
+  font-size: 13px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -306,7 +338,7 @@ html, body {
 .log-time {
   color: var(--white38);
   font-family: monospace;
-  font-size: 10px;
+  font-size: 12px;
   flex-shrink: 0;
 }
 
@@ -318,7 +350,21 @@ html, body {
 .log-row:not(.first):not(.cancelled) .log-desc { color: var(--white60); }
 
 /* ── barre d'actions ──────────────────────────────────────────────────── */
-.actions-row { display: flex; gap: 6px; padding: 4px 6px 2px; }
+.actions-row { display: flex; align-items: stretch; gap: 6px; padding: 4px 6px 6px; }
+.actions-row #btn-validate { flex: 2; }
+.menu-btn { flex: none; }
+
+.btn-main { display: block; }
+.btn-sub {
+  display: block;
+  font-size: 11px;
+  font-weight: normal;
+  opacity: 0.85;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 100%;
+}
 
 .action-btn {
   flex: 1;
@@ -334,14 +380,17 @@ html, body {
   align-items: center;
   justify-content: center;
   gap: 6px;
+  min-width: 0;
+  min-height: 48px;
 }
+/* hauteur fixe : passer de « Défaire » à « Valider / Effacer » ne décale rien */
+#screen-match .action-btn { flex-direction: column; gap: 1px; height: 56px; min-height: 0; padding: 4px 8px; line-height: 1.15; overflow: hidden; }
 .action-btn:disabled { opacity: 0.35; cursor: default; }
 .action-btn.cyan { background: #0097A7; }
 .action-btn.red { background: #B71C1C; }
 .action-btn.orange { background: #E65100; }
 .action-btn.green { background: #2E7D32; }
 
-.menu-row { display: flex; justify-content: flex-end; padding: 0 6px 4px; }
 
 /* ── écran résultat ───────────────────────────────────────────────────── */
 #screen-result { padding: 20px 24px 0; }
@@ -365,7 +414,7 @@ html, body {
 
 #btn-undo-result { margin: 10px 0; max-width: 320px; }
 
-.result-buttons { display: flex; gap: 16px; margin-top: 6px; }
+.result-buttons { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 6px; }
 .result-buttons .action-btn { flex: none; padding: 10px 18px; }
 
 #screen-result .event-log { margin: 8px 6px; }
@@ -447,6 +496,27 @@ html, body {
   cursor: pointer;
 }
 .modal-actions button.danger { color: #ef5350; }
+
+/* saisie des noms */
+.name-field { display: flex; align-items: center; gap: 10px; text-align: left; font-weight: bold; }
+.name-field span { width: 42px; flex-shrink: 0; font-size: 13px; }
+.name-field.red span { color: #ef5350; }
+.name-field.green span { color: #66bb6a; }
+.modal-body .name-field input[type="text"] { margin-top: 0; }
+.modal-body input.target { border-color: var(--cyan); box-shadow: 0 0 0 1px var(--cyan); }
+.swap-btn { display: block; margin: 0 auto; min-height: 36px; padding: 4px 10px; font-size: 13px; }
+.name-chips-title { font-size: 12px; color: var(--white38); margin: 14px 0 6px; text-align: left; }
+.name-chips { display: flex; flex-wrap: wrap; gap: 6px; max-height: 132px; overflow-y: auto; }
+.name-chip {
+  background: #2b2b4a;
+  border: 1px solid var(--white12);
+  border-radius: 16px;
+  color: #fff;
+  font-size: 14px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+.name-chip:active { background: #383862; }
 
 /* ── historique ───────────────────────────────────────────────────────── */
 .history-overlay {
@@ -666,9 +736,142 @@ html, body {
   box-shadow: 0 4px 16px rgba(0,0,0,0.4);
 }
 
+/* ── bandeau nouvelle version ─────────────────────────────────────────── */
+.update-banner {
+  position: fixed;
+  left: 50%;
+  top: calc(8px + env(safe-area-inset-top, 0px));
+  transform: translateX(-50%);
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: #0097A7;
+  color: #fff;
+  padding: 8px 8px 8px 14px;
+  border-radius: 10px;
+  font-size: 14px;
+  white-space: nowrap;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.update-banner button {
+  background: #fff;
+  color: #006064;
+  border: none;
+  border-radius: 6px;
+  padding: 7px 12px;
+  font-weight: bold;
+  font-size: 14px;
+  cursor: pointer;
+}
+
 /* petits écrans très bas (paysage) : compacter */
 @media (max-height: 560px) {
+  .timer-row { padding: 2px 12px; }
   .timer-display { font-size: 34px; min-width: 100px; }
-  .fighter-score { font-size: 34px; }
-  .zone-btn { height: 36px; }
+  .play-btn { width: 44px; height: 44px; }
+  .fighter-panel { padding: 6px; }
+  .fighter-score { font-size: 32px; }
+  .zone-btn { min-height: 40px; }
+  .card-buttons { margin-top: 6px; padding-top: 6px; }
+  .mini-card { height: 34px; }
+  .action-btn { padding: 6px 8px; min-height: 42px; }
+  #screen-match .action-btn { height: 46px; }
+  .event-log.compact { height: 64px; }
+  .status-line { height: 22px; padding-bottom: 2px; }
+}
+
+/* ── paysage (téléphone sur le côté, tablette) : journal entre les deux combattants ── */
+@media (orientation: landscape) and (min-width: 600px) {
+  #screen-match {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr minmax(170px, 0.75fr) 1fr;
+    grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+    grid-template-areas:
+      "banner  banner  banner"
+      "timer   timer   timer"
+      "pause   pause   pause"
+      "f1      log     f2"
+      "actions actions actions";
+    column-gap: 6px;
+    padding: 0 6px 4px;
+  }
+  .sd-banner { grid-area: banner; }
+  .timer-row { grid-area: timer; }
+  .status-line { grid-area: pause; }
+  .fighters-row { display: contents; }
+  .fighter-1 { grid-area: f1; }
+  .fighter-2 { grid-area: f2; }
+  #screen-match .event-log { grid-area: log; margin: 0; height: auto; overflow-y: auto; }
+  #screen-match .event-log.compact .log-row.overflow { display: flex; }
+  #screen-match .log-more { display: none; }
+  #screen-match .actions-row { grid-area: actions; padding: 6px 0 0; }
+}
+
+/* ── téléphone en paysage : peu de hauteur → cartons en colonne à droite des zones ── */
+@media (orientation: landscape) and (max-height: 560px) {
+  .fighter-panel {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    grid-template-rows: auto auto minmax(0, 1fr);
+    grid-template-areas:
+      "name  score"
+      "badge chips"
+      "zones cards";
+    gap: 4px 6px;
+    align-items: center;
+    overflow: hidden;
+  }
+  .fighter-name { grid-area: name; justify-self: start; font-size: 14px; padding: 0 6px; }
+  .fighter-score { grid-area: score; justify-self: center; font-size: 28px; margin: 0; }
+  .salve-badge { grid-area: badge; justify-self: start; margin: 0; font-size: 12px; }
+  .card-chips { grid-area: chips; margin: 0; min-height: 22px; justify-content: flex-end; }
+  .card-chip { width: 14px; height: 20px; font-size: 8px; }
+  .zone-buttons, .excluded-label { grid-area: zones; align-self: stretch; }
+  .zone-btn { min-height: 0; }
+  .card-buttons {
+    grid-area: cards;
+    align-self: stretch;
+    flex-direction: column;
+    margin: 0;
+    padding: 0 0 0 6px;
+    border-top: none;
+    border-left: 1px dashed var(--white24);
+  }
+  .mini-card { height: auto; flex: 1; width: 100%; }
+}
+
+/* ── tablette : tout en plus grand ───────────────────────────────────── */
+@media (min-width: 700px) and (min-height: 700px) {
+  .sd-banner { font-size: 17px; padding: 6px; }
+  .timer-row { gap: 18px; padding: 14px; }
+  .timer-display { font-size: 76px; min-width: 220px; }
+  .timer-reset-label, .text-btn { font-size: 16px; }
+  .icon-btn svg { width: 30px; height: 30px; }
+  .play-btn { width: 76px; height: 76px; }
+  .play-btn svg { width: 38px; height: 38px; }
+  .status-line { font-size: 18px; line-height: 26px; height: 34px; padding-bottom: 8px; }
+  .fighters-row { gap: 12px; padding: 0 12px; }
+  .fighter-panel { padding: 16px 14px; border-radius: 16px; }
+  .fighter-name { font-size: 24px; }
+  .fighter-score { font-size: 84px; }
+  .salve-badge { font-size: 18px; padding: 4px 12px; }
+  .btn-sub { font-size: 14px; }
+  .log-more { font-size: 15px; }
+  .zone-buttons { gap: 10px; }
+  .zone-btn { font-size: 22px; max-height: 150px; border-radius: 12px; }
+  .zone-btn .zone-pts { font-size: 14px; padding: 2px 8px; }
+  .card-buttons { gap: 10px; margin-top: 12px; }
+  .mini-card { height: 56px; font-size: 20px; border-radius: 6px; }
+  .card-chip { width: 26px; height: 38px; font-size: 13px; }
+  .card-chips { min-height: 38px; }
+  .event-log { margin: 8px 12px; padding: 8px 12px; }
+  .log-row { font-size: 15px; padding: 2px 0; }
+  .log-time { font-size: 13px; }
+  .actions-row { gap: 12px; padding: 6px 12px 4px; }
+  .action-btn { font-size: 18px; padding: 16px 10px; border-radius: 12px; }
+  #screen-match .action-btn { height: 72px; }
+  .event-log.compact { height: 108px; }
+  #screen-match { padding: 0 6px 6px; }
 }

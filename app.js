@@ -10,14 +10,18 @@ const state = {
   fighter1: newFighter('Combattant rouge'),
   fighter2: newFighter('Combattant vert'),
   status: 'idle', // idle | running | paused | finished
-  remainingSeconds: 180,
+  remainingSeconds: 180, // dérivé de l'horloge (voir syncClock), sert à l'affichage
+  remainingMs: 180000,   // temps restant quand le chrono est arrêté
+  timerEndsAt: null,     // échéance (Date.now()) quand le chrono tourne
+  runningSince: null,
+  elapsedMs: 0,          // temps de chrono écoulé, hors périodes en cours
   timerId: null,
   matchStartTime: null,
   salveFighter: null,
   salveMax: 0,
   salveHitCount: 0,
   salveZones: [],
-  lastSnapshot: null,
+  undoStack: [], // un état par action annulable (touche, carton), du plus ancien au plus récent
   events: [], // { matchSecond, description, type, fighterId, zone, isSalve, salveZones, pointsScored, carton, scoreRouge, scoreVert, isSuddenDeath, cancelled }
   winner: null,
   matchId: null,
@@ -32,7 +36,23 @@ function isSuddenDeath() {
   return state.fighter1.score >= 10 && state.fighter2.score >= 10 && state.status !== 'finished';
 }
 
-function elapsedSeconds() { return 180 - state.remainingSeconds; }
+const MATCH_MS = 180000;
+
+// Le chrono se calcule à partir de l'horloge réelle et non en comptant les ticks :
+// le navigateur ralentit les timers quand l'écran se verrouille ou que l'app passe
+// en arrière-plan, ce qui faussait le temps affiché.
+function currentRemainingMs() {
+  if (state.status === 'running' && state.timerEndsAt !== null) return Math.max(0, state.timerEndsAt - Date.now());
+  return state.remainingMs;
+}
+
+function syncClock() { state.remainingSeconds = Math.ceil(currentRemainingMs() / 1000); }
+
+function elapsedSeconds() {
+  let ms = state.elapsedMs;
+  if (state.status === 'running' && state.runningSince !== null) ms += Date.now() - state.runningSince;
+  return Math.floor(ms / 1000);
+}
 
 function timerDisplay() {
   const m = Math.floor(state.remainingSeconds / 60);
@@ -50,37 +70,47 @@ function nowHms() {
 // ═══════════════════════════ SNAPSHOT / UNDO ═══════════════════════════
 
 function saveSnapshot() {
-  state.lastSnapshot = {
+  state.undoStack.push({
     f1: { ...state.fighter1 },
     f2: { ...state.fighter2 },
     status: state.status,
     winner: state.winner,
     eventCountBefore: state.events.length,
-  };
+  });
 }
 
-function canUndo() { return state.lastSnapshot !== null; }
+function canUndo() { return state.undoStack.length > 0; }
+
+// libellé de l'action que « Défaire » va annuler (premier événement de cette action)
+function undoTargetLabel() {
+  const snap = state.undoStack[state.undoStack.length - 1];
+  const e = snap && state.events[snap.eventCountBefore];
+  return e ? e.description.replace(/ : (\d+) pts?$/, ' (+$1)') : '';
+}
 
 function undoLastAction() {
-  const snap = state.lastSnapshot;
+  const snap = state.undoStack.pop();
   if (!snap) return;
 
   Object.assign(state.fighter1, snap.f1);
   Object.assign(state.fighter2, snap.f2);
 
+  // Les événements de chrono (arrêt, reprise, ajustements) ne sont pas défaits :
+  // seuls ceux de l'action annulée (et une éventuelle fin de match) sont barrés.
   for (let i = snap.eventCountBefore; i < state.events.length; i++) {
-    state.events[i].cancelled = true;
+    if (state.events[i].type !== 'chrono') state.events[i].cancelled = true;
   }
 
-  const wasFinished = state.status === 'finished';
-  state.status = snap.status;
-  state.winner = snap.winner;
-
-  if (wasFinished && snap.status === 'running') {
-    startTimer();
+  // Le statut n'est restauré que si l'action annulée avait terminé le match :
+  // sinon un « pause » intercalé entre l'action et l'annulation serait écrasé.
+  if (state.status === 'finished') {
+    deleteMatchRecord(state.matchId);
+    state.status = snap.status;
+    state.winner = snap.winner;
+    if (snap.status === 'running') startTimer();
   }
 
-  state.lastSnapshot = null;
+  vibrate(15);
   render();
 }
 
@@ -110,39 +140,69 @@ function startStop() {
   }
 }
 
+function setRemainingMs(ms) {
+  if (state.status === 'running') state.timerEndsAt = Date.now() + ms;
+  else state.remainingMs = ms;
+}
+
 function resetTimer() {
-  state.remainingSeconds = 180;
-  render();
+  if (state.status === 'idle') { setRemainingMs(MATCH_MS); render(); return; }
+  showModal('Remettre le chrono à 3:00 ?', 'Le temps restant du match en cours sera remplacé.', [
+    { label: 'Annuler' },
+    { label: 'Remettre à 3:00', danger: true, onClick: () => {
+      setRemainingMs(MATCH_MS);
+      addTimestampEvent('Chrono remis à 3:00', 'chrono');
+      render();
+    } },
+  ]);
 }
 
 function addTime(seconds) {
-  state.remainingSeconds = Math.min(599, Math.max(0, state.remainingSeconds + seconds));
+  setRemainingMs(Math.min(599000, Math.max(0, currentRemainingMs() + seconds * 1000)));
+  if (state.status !== 'idle') addTimestampEvent(`Chrono +${seconds} s`, 'chrono');
   render();
+}
+
+function tick() {
+  const ms = currentRemainingMs();
+  if (ms <= 0) { signalTimeUp(); endMatch(); return; }
+  checkTimeSignals(ms);
+  if (Math.ceil(ms / 1000) !== state.remainingSeconds) render();
 }
 
 function startTimer() {
+  const now = Date.now();
+  state.timerEndsAt = now + state.remainingMs;
+  state.runningSince = now;
   state.status = 'running';
   clearInterval(state.timerId);
-  state.timerId = setInterval(() => {
-    if (state.remainingSeconds > 0) {
-      state.remainingSeconds--;
-      render();
-    } else {
-      endMatch(true);
-    }
-  }, 1000);
+  state.timerId = setInterval(tick, 250);
   render();
 }
 
+// fige le chrono (pause ou fin) en reportant le temps écoulé
+function freezeClock() {
+  if (state.status !== 'running' || state.timerEndsAt === null) return;
+  const now = Date.now();
+  state.remainingMs = Math.max(0, state.timerEndsAt - now);
+  state.elapsedMs += now - state.runningSince;
+  state.timerEndsAt = null;
+  state.runningSince = null;
+}
+
 function pauseTimer() {
-  state.status = 'paused';
   clearInterval(state.timerId);
+  freezeClock();
+  state.status = 'paused';
   render();
 }
 
 function endMatch() {
+  if (state.status === 'finished') return;
   clearInterval(state.timerId);
-  commitSalveInternal();
+  freezeClock();
+  commitSalveInternal(); // peut elle-même terminer le match (15 pts)
+  if (state.status === 'finished') return;
   state.status = 'finished';
 
   if (state.winner === null) {
@@ -159,8 +219,10 @@ function endMatch() {
 
 function zoneValue(zone) { return zone === 'A' ? 1 : zone === 'B' ? 3 : 5; }
 
+function isMatchLive() { return state.status === 'running' || state.status === 'paused'; }
+
 function hitZone(fighterId, zone) {
-  if (state.status !== 'running') return;
+  if (!isMatchLive()) return;
   const fighter = fighterId === 1 ? state.fighter1 : state.fighter2;
   if (fighter.isExcluded) return;
 
@@ -178,6 +240,7 @@ function hitZone(fighterId, zone) {
     state.salveHitCount++;
     state.salveZones.push(zone);
   }
+  vibrate(25);
   render();
 }
 
@@ -192,6 +255,7 @@ function cancelPendingSalve() {
 
 function commitSalve() {
   if (state.salveFighter === null) return;
+  vibrate(60);
   saveSnapshot();
   commitSalveInternal();
   render();
@@ -242,10 +306,11 @@ function commitSalveInternal() {
 const CARTON_CSV_NAME = { white: 'blanc', yellow: 'jaune', red: 'rouge', black: 'noir' };
 
 function addCard(fighterId, color) {
-  if (state.status !== 'running') return;
+  if (!isMatchLive()) return;
   const fighter = fighterId === 1 ? state.fighter1 : state.fighter2;
   const opponent = fighterId === 1 ? state.fighter2 : state.fighter1;
 
+  vibrate([30, 40, 30]);
   saveSnapshot();
 
   if (color === 'white') {
@@ -301,12 +366,16 @@ function resetMatch() {
   Object.assign(state.fighter2, newFighter('Combattant vert'));
   state.status = 'idle';
   state.remainingSeconds = 180;
+  state.remainingMs = MATCH_MS;
+  state.timerEndsAt = null;
+  state.runningSince = null;
+  state.elapsedMs = 0;
   state.matchStartTime = null;
   state.salveFighter = null;
   state.salveMax = 0;
   state.salveHitCount = 0;
   state.salveZones = [];
-  state.lastSnapshot = null;
+  state.undoStack = [];
   state.events = [];
   state.winner = null;
   state.matchId = null;
@@ -527,21 +596,26 @@ function colorizeInto(container, text) {
   if (cursor < text.length) container.appendChild(document.createTextNode(text.substring(cursor)));
 }
 
-function renderEventLog(container, events = state.events) {
+const COMPACT_LOG_ROWS = 3;
+
+// Le plus récent en haut. compact : seules les dernières lignes sont affichées en match
+// (portrait), le journal complet s'ouvre d'un tap.
+function renderEventLog(container, events = state.events, { compact = false, emptyText = 'Aucun événement' } = {}) {
   container.innerHTML = '';
+  container.classList.toggle('compact', compact);
   if (events.length === 0) {
     const empty = document.createElement('div');
     empty.className = 'event-log-empty';
-    empty.textContent = 'Aucun événement';
+    empty.textContent = emptyText;
     container.appendChild(empty);
     return;
   }
-  // column-reverse affiche déjà le dernier élément du DOM en haut visuellement,
-  // donc on ajoute dans l'ordre chronologique et "first" = dernier ajouté.
-  events.forEach((e, i) => {
+  for (let i = events.length - 1; i >= 0; i--) {
+    const e = events[i];
     const row = document.createElement('div');
-    const isFirst = i === events.length - 1;
-    row.className = 'log-row' + (e.cancelled ? ' cancelled' : '') + (isFirst ? ' first' : '');
+    const rank = events.length - 1 - i;
+    row.className = 'log-row' + (e.cancelled ? ' cancelled' : '') + (rank === 0 ? ' first' : '')
+      + (compact && rank >= COMPACT_LOG_ROWS ? ' overflow' : '');
 
     const m = Math.floor(e.matchSecond / 60);
     const s = e.matchSecond % 60;
@@ -557,31 +631,77 @@ function renderEventLog(container, events = state.events) {
     row.appendChild(desc);
 
     container.appendChild(row);
-  });
+  }
+  if (compact && events.length > COMPACT_LOG_ROWS) {
+    const more = document.createElement('div');
+    more.className = 'log-more';
+    const hidden = events.length - COMPACT_LOG_ROWS;
+    more.textContent = `+ ${hidden} ligne${hidden > 1 ? 's' : ''} — toucher pour tout voir`;
+    container.appendChild(more);
+  }
+}
+
+function openLog() {
+  renderEventLog(document.getElementById('event-log-full'));
+  document.getElementById('log-overlay').classList.remove('hidden');
+}
+
+function closeLog() { document.getElementById('log-overlay').classList.add('hidden'); }
+
+function salveSummary() {
+  const pts = `+${state.salveMax} pt${state.salveMax > 1 ? 's' : ''}`;
+  return state.salveHitCount >= 2 ? `${pts} · salve ×${state.salveHitCount}` : pts;
+}
+
+function renderStatusLine() {
+  const el = document.getElementById('status-line');
+  let text = '';
+  let kind = '';
+  if (state.status === 'idle') {
+    text = 'Touchez ▶ pour lancer · un nom pour le saisir';
+    kind = 'hint';
+  } else if (state.status === 'paused') {
+    text = 'CHRONO ARRÊTÉ — saisie toujours possible';
+    kind = 'paused';
+  }
+  el.textContent = text || '·';
+  el.className = `status-line ${kind}`;
+  el.classList.toggle('invisible', !text);
+}
+
+function renderActionBar() {
+  const pending = state.salveFighter !== null;
+  document.getElementById('btn-cancel-salve').classList.toggle('hidden', !pending);
+  document.getElementById('btn-validate').classList.toggle('hidden', !pending);
+  document.getElementById('btn-undo').classList.toggle('hidden', pending);
+  if (pending) {
+    const fighter = state.salveFighter === 1 ? state.fighter1 : state.fighter2;
+    document.getElementById('validate-main').textContent = `✓ Valider ${salveSummary()}`;
+    document.getElementById('validate-sub').textContent = fighter.name;
+  }
+  document.getElementById('btn-undo').disabled = !canUndo();
+  document.getElementById('undo-sub').textContent = canUndo() ? undoTargetLabel() : 'rien à défaire';
 }
 
 function renderFighterPanel(id, fighter) {
   const panel = document.getElementById(`panel-${id}`);
-  const isRunning = state.status === 'running';
   const hasPendingSalve = state.salveFighter === id;
-  const enabled = isRunning && (state.salveFighter === null || state.salveFighter === id);
+  const enabled = isMatchLive() && (state.salveFighter === null || state.salveFighter === id);
 
   panel.classList.toggle('excluded', fighter.isExcluded);
   panel.classList.toggle('pending-salve', hasPendingSalve);
 
   const nameEl = document.getElementById(`name-${id}`);
-  nameEl.textContent = fighter.name;
-  nameEl.classList.toggle('editable', state.status === 'idle');
+  const editable = state.status === 'idle';
+  nameEl.textContent = editable ? `${fighter.name} ✎` : fighter.name;
+  nameEl.classList.toggle('editable', editable);
+  nameEl.disabled = !editable;
   document.getElementById(`score-${id}`).textContent = fighter.score;
 
+  // emplacement toujours réservé : rien ne bouge sous le doigt de l'arbitre
   const badge = document.getElementById(`salve-badge-${id}`);
-  if (hasPendingSalve) {
-    badge.classList.remove('hidden');
-    const multi = state.salveHitCount >= 2;
-    badge.textContent = `+ ${state.salveMax} pt${state.salveMax > 1 ? 's' : ''}${multi ? ' (salve)' : ''}`;
-  } else {
-    badge.classList.add('hidden');
-  }
+  badge.classList.toggle('invisible', !hasPendingSalve);
+  badge.textContent = hasPendingSalve ? salveSummary() : '·';
 
   const zonesEl = document.getElementById(`zones-${id}`);
   zonesEl.classList.toggle('hidden', fighter.isExcluded);
@@ -597,7 +717,8 @@ function renderFighterPanel(id, fighter) {
   });
 
   const cardButtons = document.getElementById(`card-buttons-${id}`);
-  cardButtons.classList.toggle('hidden', fighter.isExcluded || !enabled);
+  cardButtons.classList.toggle('hidden', fighter.isExcluded);
+  cardButtons.classList.toggle('invisible', !enabled);
 
   renderCardChips(document.getElementById(`card-chips-${id}`), fighter);
 }
@@ -639,8 +760,8 @@ function renderWinnerTitle() {
 }
 
 function render() {
+  syncClock();
   const isRunning = state.status === 'running';
-  const isPaused = state.status === 'paused';
   const isFinished = state.status === 'finished';
   const isPulsing = state.remainingSeconds < 10 && isRunning;
 
@@ -658,16 +779,12 @@ function render() {
   document.getElementById('icon-pause').classList.toggle('hidden', !isRunning);
   document.getElementById('btn-play-pause').classList.toggle('running', isRunning);
 
-  document.getElementById('pause-indicator').classList.toggle('hidden', !isPaused);
-
+  renderStatusLine();
   renderFighterPanel(1, state.fighter1);
   renderFighterPanel(2, state.fighter2);
-
-  renderEventLog(document.getElementById('event-log'));
-
-  document.getElementById('btn-validate').disabled = state.salveFighter === null;
-  document.getElementById('btn-cancel-salve').disabled = state.salveFighter === null;
-  document.getElementById('btn-undo').disabled = !canUndo();
+  renderEventLog(document.getElementById('event-log'), state.events, { compact: true, emptyText: 'Journal du match' });
+  renderActionBar();
+  if (isShown('log-overlay')) renderEventLog(document.getElementById('event-log-full'));
 
   if (isFinished) {
     renderWinnerTitle();
@@ -676,6 +793,76 @@ function render() {
     document.getElementById('btn-undo-result').classList.toggle('hidden', !canUndo());
     renderEventLog(document.getElementById('event-log-result'));
   }
+
+  persistLiveMatch();
+  updateWakeLock();
+}
+
+// ═══════════════════════════ RETOURS : VIBRATIONS ET SIGNAUX ═══════════════════════════
+// L'arbitre regarde le combat, pas l'écran : chaque saisie est confirmée par une vibration,
+// et la fin du temps (et les 10 dernières secondes) par un signal.
+
+const SOUND_KEY = 'appasl-sound';
+let soundOn = true;
+try { soundOn = localStorage.getItem(SOUND_KEY) !== 'off'; } catch (e) {}
+let audioCtx = null;
+
+function vibrate(pattern) {
+  if (navigator.vibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+}
+
+// l'audio ne peut démarrer qu'après un geste de l'utilisateur
+function unlockAudio() {
+  const Ctx = window.AudioContext || window.webkitAudioContext;
+  if (!Ctx) return;
+  if (!audioCtx) audioCtx = new Ctx();
+  if (audioCtx.state === 'suspended') audioCtx.resume().catch(() => {});
+}
+
+function beep(freq, durationMs, startDelayMs = 0) {
+  if (!soundOn || !audioCtx) return;
+  const t0 = audioCtx.currentTime + startDelayMs / 1000;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(0.25, t0 + 0.01);
+  gain.gain.setValueAtTime(0.25, t0 + durationMs / 1000 - 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + durationMs / 1000);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t0);
+  osc.stop(t0 + durationMs / 1000 + 0.02);
+}
+
+function signalTenSeconds() {
+  vibrate([120, 60, 120]);
+  beep(880, 120); beep(880, 120, 200);
+}
+
+function signalTimeUp() {
+  vibrate([400, 120, 400, 120, 400]);
+  beep(660, 900);
+}
+
+let warnedTenSeconds = false;
+
+function checkTimeSignals(ms) {
+  if (ms > 10000) { warnedTenSeconds = false; return; }
+  if (!warnedTenSeconds && state.status === 'running') { warnedTenSeconds = true; signalTenSeconds(); }
+}
+
+function toggleSound() {
+  soundOn = !soundOn;
+  try { localStorage.setItem(SOUND_KEY, soundOn ? 'on' : 'off'); } catch (e) {}
+  updateSoundMenuLabel();
+  if (soundOn) { unlockAudio(); beep(880, 100); }
+  showToast(soundOn ? 'Signaux sonores activés' : 'Signaux sonores coupés (vibrations conservées)');
+}
+
+function updateSoundMenuLabel() {
+  document.querySelector('[data-action="sound"]').innerHTML =
+    soundOn ? '🔔&nbsp;&nbsp;Signaux sonores : oui' : '🔕&nbsp;&nbsp;Signaux sonores : non';
 }
 
 // ═══════════════════════════ UI : MODAL / MENU / TOAST ═══════════════════════════
@@ -688,7 +875,9 @@ function showToast(msg) {
   toast._t = setTimeout(() => toast.classList.add('hidden'), 4000);
 }
 
-function showModal(title, bodyHtml, buttons) {
+// dismissable: false → ni un tap à côté ni le bouton retour ne ferment la fenêtre
+function showModal(title, bodyHtml, buttons, { dismissable = true } = {}) {
+  modalDismissable = dismissable;
   document.getElementById('modal-title').textContent = title;
   document.getElementById('modal-body').innerHTML = bodyHtml;
   const actions = document.getElementById('modal-actions');
@@ -702,6 +891,8 @@ function showModal(title, bodyHtml, buttons) {
   });
   document.getElementById('modal-overlay').classList.remove('hidden');
 }
+
+let modalDismissable = true;
 
 function hideModal() { document.getElementById('modal-overlay').classList.add('hidden'); }
 
@@ -1274,36 +1465,69 @@ function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-async function promptRenameFighter(id) {
+const DEFAULT_NAMES = { 1: 'Combattant rouge', 2: 'Combattant vert' };
+
+// noms déjà utilisés, du plus récent au plus ancien
+async function recentFighterNames(limit = 12) {
+  const records = (await getAllMatchRecords()).sort((x, y) => y.savedAt - x.savedAt);
+  const seen = new Map();
+  const defaults = new Set(Object.values(DEFAULT_NAMES).map((n) => n.toLowerCase()));
+  records.forEach((r) => [r.fighter1Name, r.fighter2Name].forEach((raw) => {
+    const n = normalizeName(raw);
+    if (n && !defaults.has(n.toLowerCase()) && !seen.has(n.toLowerCase())) seen.set(n.toLowerCase(), n);
+  }));
+  return [...seen.values()].slice(0, limit);
+}
+
+// Saisie des deux noms d'un coup. Pas de focus automatique : le clavier masquerait
+// les noms récents, qui se choisissent d'un tap.
+async function promptNames(focusId = 1) {
   if (state.status !== 'idle') return;
-  const fighter = id === 1 ? state.fighter1 : state.fighter2;
-  const defaultName = id === 1 ? 'Combattant rouge' : 'Combattant vert';
+  const recent = await recentFighterNames();
+  const value = (id) => {
+    const f = id === 1 ? state.fighter1 : state.fighter2;
+    return f.name === DEFAULT_NAMES[id] ? '' : f.name;
+  };
+  const chips = recent.map((n) => `<button type="button" class="name-chip">${escapeHtml(n)}</button>`).join('');
 
-  const records = await getAllMatchRecords();
-  const knownNames = new Set();
-  records.forEach((r) => {
-    if (r.fighter1Name) knownNames.add(normalizeName(r.fighter1Name));
-    if (r.fighter2Name) knownNames.add(normalizeName(r.fighter2Name));
-  });
-  const options = [...knownNames].sort((a, b) => a.localeCompare(b, 'fr'))
-    .map((n) => `<option value="${escapeHtml(n)}"></option>`).join('');
-
-  showModal('Nom du combattant', `
-    <input id="rename-input" type="text" list="rename-suggestions" maxlength="24" value="${escapeHtml(fighter.name)}" placeholder="${escapeHtml(defaultName)}">
-    <datalist id="rename-suggestions">${options}</datalist>
+  showModal('Combattants', `
+    <label class="name-field red"><span>Rouge</span>
+      <input id="name-input-1" type="text" maxlength="24" autocomplete="off" value="${escapeHtml(value(1))}" placeholder="${DEFAULT_NAMES[1]}">
+    </label>
+    <button type="button" id="btn-swap-names" class="text-btn swap-btn">⇅ Inverser</button>
+    <label class="name-field green"><span>Vert</span>
+      <input id="name-input-2" type="text" maxlength="24" autocomplete="off" value="${escapeHtml(value(2))}" placeholder="${DEFAULT_NAMES[2]}">
+    </label>
+    ${chips ? `<div class="name-chips-title">Noms récents</div><div class="name-chips">${chips}</div>` : ''}
   `, [
     { label: 'Annuler' },
     { label: 'Valider', onClick: () => {
-      const input = document.getElementById('rename-input');
-      fighter.name = normalizeName(input.value) || defaultName;
+      [1, 2].forEach((id) => {
+        const f = id === 1 ? state.fighter1 : state.fighter2;
+        f.name = normalizeName(document.getElementById(`name-input-${id}`).value) || DEFAULT_NAMES[id];
+      });
       render();
     } },
   ]);
 
-  setTimeout(() => {
-    const input = document.getElementById('rename-input');
-    if (input) { input.focus(); input.select(); }
-  }, 50);
+  const inputs = { 1: document.getElementById('name-input-1'), 2: document.getElementById('name-input-2') };
+  let target = focusId;
+  inputs[target].classList.add('target');
+  const setTarget = (id) => {
+    target = id;
+    inputs[1].classList.toggle('target', id === 1);
+    inputs[2].classList.toggle('target', id === 2);
+  };
+  inputs[1].addEventListener('focus', () => setTarget(1));
+  inputs[2].addEventListener('focus', () => setTarget(2));
+  document.getElementById('btn-swap-names').addEventListener('click', () => {
+    [inputs[1].value, inputs[2].value] = [inputs[2].value, inputs[1].value];
+  });
+  document.querySelectorAll('#modal-body .name-chip').forEach((chip) => chip.addEventListener('click', () => {
+    inputs[target].value = chip.textContent;
+    const other = target === 1 ? 2 : 1;
+    if (!inputs[other].value) setTarget(other); // enchaîne sur le champ encore vide
+  }));
 }
 
 function doToss() {
@@ -1316,7 +1540,150 @@ function doToss() {
   );
 }
 
+// ═══════════════════════════ MATCH EN COURS : SAUVEGARDE / REPRISE ═══════════════════════════
+// Le match en cours est recopié à chaque rendu : un rechargement, un appel entrant ou un
+// onglet fermé par le téléphone ne doit pas faire perdre le match.
+
+const LIVE_MATCH_KEY = 'appasl-live-match';
+let liveRestorePending = false; // ne pas écraser la sauvegarde tant que l'arbitre n'a pas choisi
+
+function persistLiveMatch() {
+  if (liveRestorePending) return;
+  try {
+    if (!isMatchLive()) { localStorage.removeItem(LIVE_MATCH_KEY); return; }
+    localStorage.setItem(LIVE_MATCH_KEY, JSON.stringify({
+      v: 1,
+      fighter1: state.fighter1,
+      fighter2: state.fighter2,
+      remainingMs: currentRemainingMs(),
+      elapsedMs: elapsedSeconds() * 1000,
+      matchStartTime: state.matchStartTime ? state.matchStartTime.getTime() : null,
+      salveFighter: state.salveFighter,
+      salveMax: state.salveMax,
+      salveHitCount: state.salveHitCount,
+      salveZones: state.salveZones,
+      undoStack: state.undoStack,
+      events: state.events,
+      matchId: state.matchId,
+    }));
+  } catch (e) { /* stockage indisponible (navigation privée) : on continue sans */ }
+}
+
+function readLiveMatch() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(LIVE_MATCH_KEY));
+    return saved && saved.v === 1 && saved.matchId ? saved : null;
+  } catch (e) { return null; }
+}
+
+function restoreLiveMatch(saved) {
+  Object.assign(state.fighter1, saved.fighter1);
+  Object.assign(state.fighter2, saved.fighter2);
+  Object.assign(state, {
+    status: 'paused', // l'arbitre relance le chrono lui-même
+    remainingMs: saved.remainingMs,
+    timerEndsAt: null,
+    runningSince: null,
+    elapsedMs: saved.elapsedMs,
+    matchStartTime: saved.matchStartTime ? new Date(saved.matchStartTime) : new Date(),
+    salveFighter: saved.salveFighter,
+    salveMax: saved.salveMax,
+    salveHitCount: saved.salveHitCount,
+    salveZones: saved.salveZones,
+    undoStack: saved.undoStack || [],
+    events: saved.events,
+    winner: null,
+    matchId: saved.matchId,
+  });
+  addTimestampEvent('Match restauré', 'chrono');
+  render();
+}
+
+function offerLiveMatchRestore() {
+  const saved = readLiveMatch();
+  if (!saved) return;
+  liveRestorePending = true;
+  const m = Math.floor(Math.ceil(saved.remainingMs / 1000) / 60);
+  const s = Math.ceil(saved.remainingMs / 1000) % 60;
+  showModal('Match en cours retrouvé', `
+    <b>${escapeHtml(saved.fighter1.name)}</b> ${saved.fighter1.score} — ${saved.fighter2.score} <b>${escapeHtml(saved.fighter2.name)}</b><br>
+    Chrono arrêté à ${m}:${pad2(s)}. Reprendre ce match ?
+  `, [
+    { label: 'Abandonner', danger: true, onClick: () => { liveRestorePending = false; render(); } },
+    { label: 'Reprendre', onClick: () => { liveRestorePending = false; restoreLiveMatch(saved); } },
+  ], { dismissable: false });
+}
+
+// ═══════════════════════════ ÉCRAN MAINTENU ALLUMÉ ═══════════════════════════
+
+let wakeLock = null;
+let wakeLockPending = false;
+
+async function updateWakeLock() {
+  if (!('wakeLock' in navigator)) return;
+  const wanted = isMatchLive() && document.visibilityState === 'visible';
+  if (wanted && !wakeLock && !wakeLockPending) {
+    wakeLockPending = true;
+    try {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } catch (e) { /* refusé (économie d'énergie) : sans conséquence sur le match */ }
+    wakeLockPending = false;
+  } else if (!wanted && wakeLock) {
+    wakeLock.release().catch(() => {});
+    wakeLock = null;
+  }
+}
+
+// ═══════════════════════════ BOUTON RETOUR (ANDROID) ═══════════════════════════
+// Une entrée d'historique « tampon » absorbe le retour : il ferme le panneau ouvert au lieu
+// de quitter l'app. Elle est (ré)armée sur un tap, car Chrome ignore les entrées ajoutées
+// sans geste de l'utilisateur.
+
+let backArmed = false;
+
+function armBack() {
+  if (backArmed) return;
+  history.pushState({ appasl: true }, '');
+  backArmed = true;
+}
+
+function isShown(id) { return !document.getElementById(id).classList.contains('hidden'); }
+
+function closeTopLayer() {
+  if (isShown('modal-overlay')) { if (modalDismissable) hideModal(); return true; }
+  if (isShown('menu-overlay')) { toggleMenu(false); return true; }
+  if (isShown('log-overlay')) { closeLog(); return true; }
+  if (isShown('history-detail-overlay')) { closeHistoryDetail(); return true; }
+  if (isShown('stats-overlay')) { closeStats(); return true; }
+  if (isShown('history-overlay')) { closeHistory(); return true; }
+  return false;
+}
+
+window.addEventListener('popstate', () => {
+  backArmed = false;
+  if (closeTopLayer()) return;
+  if (isMatchLive()) showToast('Match en cours : il reste enregistré si vous quittez l\'app.');
+});
+
 // ═══════════════════════════ LIAISON DES ÉVÉNEMENTS DOM ═══════════════════════════
+
+document.addEventListener('click', armBack, true);
+document.addEventListener('click', unlockAudio, true);
+
+document.getElementById('event-log').addEventListener('click', () => { if (state.events.length) openLog(); });
+document.getElementById('btn-log-close').addEventListener('click', closeLog);
+document.getElementById('log-overlay').addEventListener('click', (e) => {
+  if (e.target.id === 'log-overlay') closeLog();
+});
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    render();
+    if (swRegistration) swRegistration.update().catch(() => {});
+  } else {
+    updateWakeLock();
+  }
+});
 
 document.getElementById('btn-reset-timer').addEventListener('click', resetTimer);
 document.getElementById('btn-add-time').addEventListener('click', () => addTime(30));
@@ -1329,7 +1696,7 @@ document.getElementById('btn-undo-result').addEventListener('click', undoLastAct
 
 document.getElementById('btn-export-result').addEventListener('click', exportCsv);
 document.getElementById('btn-history-result').addEventListener('click', openHistory);
-document.getElementById('btn-new-match').addEventListener('click', resetMatch);
+document.getElementById('btn-new-match').addEventListener('click', () => { resetMatch(); promptNames(1); });
 
 [1, 2].forEach((id) => {
   document.getElementById(`zones-${id}`).addEventListener('click', (e) => {
@@ -1343,7 +1710,7 @@ document.getElementById('btn-new-match').addEventListener('click', resetMatch);
     if (color === 'black') confirmBlackCard(id);
     else addCard(id, color);
   });
-  document.getElementById(`name-${id}`).addEventListener('click', () => promptRenameFighter(id));
+  document.getElementById(`name-${id}`).addEventListener('click', () => promptNames(id));
 });
 
 document.getElementById('btn-menu').addEventListener('click', () => toggleMenu(true));
@@ -1356,11 +1723,12 @@ document.getElementById('menu-overlay').addEventListener('click', (e) => {
   else if (action === 'export') exportCsv();
   else if (action === 'history') openHistory();
   else if (action === 'stats') openStats();
+  else if (action === 'sound') toggleSound();
   else if (action === 'reset') confirmReset();
 });
 
 document.getElementById('modal-overlay').addEventListener('click', (e) => {
-  if (e.target.id === 'modal-overlay') hideModal();
+  if (e.target.id === 'modal-overlay' && modalDismissable) hideModal();
 });
 
 document.getElementById('btn-history-close').addEventListener('click', closeHistory);
@@ -1403,12 +1771,24 @@ document.addEventListener('touchmove', (e) => {
 
 // ═══════════════════════════ PWA : SERVICE WORKER ═══════════════════════════
 
+// Une nouvelle version prend la main en arrière-plan : on le signale au lieu de laisser
+// l'arbitre sur l'ancienne sans le savoir (le rechargement est sûr, le match est sauvegardé).
+let swRegistration = null;
+
 if ('serviceWorker' in navigator) {
+  const hadController = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController) document.getElementById('update-banner').classList.remove('hidden');
+  });
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => {});
+    navigator.serviceWorker.register('sw.js').then((reg) => { swRegistration = reg; }).catch(() => {});
   });
 }
 
+document.getElementById('btn-update-reload').addEventListener('click', () => location.reload());
+
 // ═══════════════════════════ INIT ═══════════════════════════
 
+updateSoundMenuLabel();
+offerLiveMatchRestore();
 render();

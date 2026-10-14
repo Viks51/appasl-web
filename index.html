@@ -40,59 +40,62 @@
       </button>
     </div>
 
-    <div id="pause-indicator" class="pause-indicator hidden">MATCH EN PAUSE</div>
+    <div id="status-line" class="status-line"></div>
 
     <div class="fighters-row">
       <div class="fighter-panel fighter-1" id="panel-1" data-fighter="1">
-        <div class="fighter-name" id="name-1"></div>
+        <button class="fighter-name" id="name-1" type="button"></button>
         <div class="fighter-score" id="score-1">0</div>
-        <div class="salve-badge hidden" id="salve-badge-1"></div>
+        <div class="salve-badge" id="salve-badge-1"></div>
         <div class="zone-buttons" id="zones-1">
           <button class="zone-btn zone-c" data-zone="C"><span class="zone-label">Zone C</span><span class="zone-pts">5 pts</span></button>
           <button class="zone-btn zone-b" data-zone="B"><span class="zone-label">Zone B</span><span class="zone-pts">3 pts</span></button>
           <button class="zone-btn zone-a" data-zone="A"><span class="zone-label">Zone A</span><span class="zone-pts">1 pt</span></button>
         </div>
         <div class="excluded-label hidden" id="excluded-1">EXCLU</div>
-        <div class="card-buttons hidden" id="card-buttons-1">
-          <button class="mini-card white" data-card="white">B</button>
-          <button class="mini-card yellow" data-card="yellow">J</button>
-          <button class="mini-card red" data-card="red">R</button>
-          <button class="mini-card black" data-card="black">N</button>
+        <div class="card-buttons" id="card-buttons-1">
+          <button class="mini-card white" data-card="white" aria-label="Carton blanc">B</button>
+          <button class="mini-card yellow" data-card="yellow" aria-label="Carton jaune">J</button>
+          <button class="mini-card red" data-card="red" aria-label="Carton rouge">R</button>
+          <button class="mini-card black" data-card="black" aria-label="Carton noir">N</button>
         </div>
         <div class="card-chips" id="card-chips-1"></div>
       </div>
 
       <div class="fighter-panel fighter-2" id="panel-2" data-fighter="2">
-        <div class="fighter-name" id="name-2"></div>
+        <button class="fighter-name" id="name-2" type="button"></button>
         <div class="fighter-score" id="score-2">0</div>
-        <div class="salve-badge hidden" id="salve-badge-2"></div>
+        <div class="salve-badge" id="salve-badge-2"></div>
         <div class="zone-buttons" id="zones-2">
           <button class="zone-btn zone-c" data-zone="C"><span class="zone-label">Zone C</span><span class="zone-pts">5 pts</span></button>
           <button class="zone-btn zone-b" data-zone="B"><span class="zone-label">Zone B</span><span class="zone-pts">3 pts</span></button>
           <button class="zone-btn zone-a" data-zone="A"><span class="zone-label">Zone A</span><span class="zone-pts">1 pt</span></button>
         </div>
         <div class="excluded-label hidden" id="excluded-2">EXCLU</div>
-        <div class="card-buttons hidden" id="card-buttons-2">
-          <button class="mini-card white" data-card="white">B</button>
-          <button class="mini-card yellow" data-card="yellow">J</button>
-          <button class="mini-card red" data-card="red">R</button>
-          <button class="mini-card black" data-card="black">N</button>
+        <div class="card-buttons" id="card-buttons-2">
+          <button class="mini-card white" data-card="white" aria-label="Carton blanc">B</button>
+          <button class="mini-card yellow" data-card="yellow" aria-label="Carton jaune">J</button>
+          <button class="mini-card red" data-card="red" aria-label="Carton rouge">R</button>
+          <button class="mini-card black" data-card="black" aria-label="Carton noir">N</button>
         </div>
         <div class="card-chips" id="card-chips-2"></div>
       </div>
     </div>
 
-    <div class="event-log" id="event-log"><div class="event-log-empty">Aucun événement</div></div>
+    <div class="event-log" id="event-log" role="button" aria-label="Voir tout le journal"></div>
 
     <div class="actions-row">
-      <button id="btn-validate" class="action-btn cyan" disabled>✓ Valider</button>
-      <button id="btn-cancel-salve" class="action-btn red" disabled>✕ Annuler</button>
-      <button id="btn-undo" class="action-btn orange" disabled>↺ Annuler</button>
-    </div>
-
-    <div class="menu-row">
-      <button id="btn-menu" class="icon-btn" aria-label="Menu">
-        <svg viewBox="0 0 24 24" width="22" height="22"><path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+      <button id="btn-cancel-salve" class="action-btn red hidden">✕ Effacer la salve</button>
+      <button id="btn-validate" class="action-btn cyan hidden">
+        <span id="validate-main" class="btn-main">✓ Valider</span>
+        <span id="validate-sub" class="btn-sub"></span>
+      </button>
+      <button id="btn-undo" class="action-btn orange" disabled>
+        <span class="btn-main">↺ Défaire</span>
+        <span id="undo-sub" class="btn-sub"></span>
+      </button>
+      <button id="btn-menu" class="icon-btn menu-btn" aria-label="Menu">
+        <svg viewBox="0 0 24 24" width="24" height="24"><path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
       </button>
     </div>
   </section>
@@ -104,7 +107,7 @@
       <div id="winner-title" class="winner-title"></div>
       <div id="result-score-1" class="result-score"></div>
       <div id="result-score-2" class="result-score"></div>
-      <button id="btn-undo-result" class="action-btn orange hidden">↺ Annuler la dernière action</button>
+      <button id="btn-undo-result" class="action-btn orange hidden">↺ Défaire la dernière action</button>
       <div class="result-buttons">
         <button id="btn-export-result" class="action-btn">⬇ Export</button>
         <button id="btn-history-result" class="action-btn">🗂 Historique</button>
@@ -123,7 +126,19 @@
     <button data-action="export">⬇&nbsp;&nbsp;Export</button>
     <button data-action="history">🗂&nbsp;&nbsp;Historique</button>
     <button data-action="stats">📊&nbsp;&nbsp;Statistiques</button>
+    <button data-action="sound">🔔&nbsp;&nbsp;Signaux sonores : oui</button>
     <button data-action="reset" class="danger">↻&nbsp;&nbsp;Reset</button>
+  </div>
+</div>
+
+<!-- journal complet du match en cours -->
+<div id="log-overlay" class="history-overlay hidden">
+  <div class="history-panel">
+    <div class="history-header">
+      <div class="history-title">Journal du match</div>
+      <button id="btn-log-close" class="icon-btn" aria-label="Fermer">✕</button>
+    </div>
+    <div id="event-log-full" class="event-log"></div>
   </div>
 </div>
 
@@ -179,6 +194,12 @@
     <div id="modal-body" class="modal-body"></div>
     <div id="modal-actions" class="modal-actions"></div>
   </div>
+</div>
+
+<!-- nouvelle version -->
+<div id="update-banner" class="update-banner hidden">
+  <span>Nouvelle version disponible</span>
+  <button id="btn-update-reload" type="button">Recharger</button>
 </div>
 
 <!-- toast -->
